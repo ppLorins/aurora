@@ -1,0 +1,226 @@
+
+syntax = "proto2";
+
+package raft;
+
+enum ErrorCode{
+    //----------------for client----------------//
+    //common error code
+    SUCCESS          = 0;
+    FAIL             = 1;
+    IMPLICIT_FAIL    = 2;
+    HALTED           = 3;
+
+    //----------------for inner communicating----------------//
+
+    //AppendEntries RPC:
+    APPEND_ENTRY_CONFLICT = 1000;
+    WAITING_TIMEOUT       = 1001;
+    SUCCESS_MERGED        = 1002; //Log merged into existing binlog entries.
+    OVERSTEP_LCL          = 1003;
+
+    //CommitEntries RPC:
+    ALREADY_COMMITTED     = 2000;
+
+    //SyncData RPC:
+    PREPARE_CONFRIMED     = 3000;
+    SYNC_DATA_CONFRIMED   = 3001;
+    SYNC_LOG_CONFRIMED    = 3002;
+
+    //Prevote RPC:
+    PREVOTE_YES     = 4000;
+    PREVOTE_NO      = 4001;
+
+    //Vote RPC:
+    VOTE_YES     = 5000;
+    VOTE_NO      = 5001;
+
+    //MemberChange RPC:
+    ALREADY_JOINT_CONSENSUS  = 6001;
+}
+
+enum SyncDataMsgType{
+    PREPARE             = 0;
+    SYNC_DATA           = 1;
+    SYNC_LOG            = 2;
+}
+
+enum MembershipFlag{
+   EMPTY  = 0;
+   NEWBIE  = 1;
+}
+
+message RequestBase {
+  required string addr   = 1; //Requesting node addr,format: 192.168.0.100:10010.
+  required uint32 term   = 2; //Requesting node term.
+}
+
+message ClientWriteRequest {
+  required WriteRequest req   = 1;
+}
+
+message WriteRequest {
+  required string key = 1;
+  required string value = 2;
+}
+
+message CommonResponse {
+    required  ErrorCode result = 1 [default  = SUCCESS];
+    optional  string err_msg = 2 [default  = ""];
+}
+
+message ClientCommonResponse {
+    required  ErrorCode result      = 1 [default  = SUCCESS];
+    optional  string err_msg        = 2 [default  = ""];
+    optional  string  redirect_to   = 3 ;
+}
+
+message ClientWriteResponse {
+    required  ClientCommonResponse client_comm_rsp = 1 ;
+}
+
+message MemberChangeRequest{
+  //A list of new node addresses, address format : `ip:port`
+  repeated string  node_list  = 1;
+}
+
+message MemberChangeResponse {
+  required  ClientCommonResponse client_comm_rsp = 1 ;
+}
+
+
+message ClientReadRequest {
+  required string key = 1;
+}
+
+message ClientReadResponse {
+    required  ClientCommonResponse client_comm_rsp = 1 ;
+    required  string value   = 2 [default  = ""];
+}
+
+/*Important:modification of this message must be backward compitable*/
+message EntityID {
+  required uint32 term = 1;
+  required uint64 idx = 2;
+}
+
+/*Important:modification of this message must be backward compitable*/
+message Entity {
+  required WriteRequest write_op = 1;
+  required EntityID entity_id    = 2;
+  optional EntityID pre_log_id   = 3;
+}
+
+message AppendEntriesRequest {
+  required RequestBase  base        = 1;
+  repeated Entity replicate_entity  = 2;
+  optional string debug_info  = 3;
+}
+
+message AppendEntriesResponse {
+    required  CommonResponse comm_rsp   = 1;
+    //Follower's last replicated log ID
+    optional  EntityID       my_lrl     = 2;
+}
+
+message CommitEntryRequest{
+  required RequestBase  base  = 1;
+  required EntityID entity_id = 4;
+}
+
+message CommitEntryResponse{
+  required  CommonResponse comm_rsp = 1 ;
+}
+
+message HeartBeatRequest {
+  required RequestBase  base  = 1;
+}
+
+message SyncDataRequest {
+    required  RequestBase   base          = 1;
+    required  SyncDataMsgType   msg_type  = 2;
+    repeated  Entity      entity          = 3;
+}
+
+message SyncDataResponse {
+    required  CommonResponse comm_rsp = 1 ;
+}
+
+message VoteRequest{
+  required RequestBase  base          = 1;
+  required EntityID  last_log_entity  = 2;
+  required uint32    member_version   = 3;
+}
+
+message VoteResponse {
+  required  CommonResponse comm_rsp = 1 ;
+}
+
+message MemberChangeInnerRequest{
+  required RequestBase  base  = 1;
+  repeated string  node_list  = 2;
+  required uint32  version    = 3;
+  optional MembershipFlag  flag  = 4;
+}
+
+message MemberChangeInnerResponse {
+  required  CommonResponse comm_rsp = 1 ;
+}
+
+service RaftService {
+
+  //-----------------for client invoking-----------------//
+  rpc Write(ClientWriteRequest) returns (ClientWriteResponse) {}
+
+  rpc Read(ClientReadRequest) returns (ClientReadResponse) {}
+
+  //Membership change RPCs.
+  rpc MembershipChange(MemberChangeRequest) returns (MemberChangeResponse) {}
+
+  //-----------------for raft nodes inner communicating-----------------//
+  //Log replication PhaseI.
+  rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse) {}
+
+  //Log replication PhaseII.
+  rpc CommitEntries(CommitEntryRequest) returns (CommitEntryResponse) {}
+
+  rpc SyncData(stream SyncDataRequest) returns (stream SyncDataResponse) {}
+
+  //Membership change PhaseI.
+  rpc MemberChangePrepare(MemberChangeInnerRequest) returns (MemberChangeInnerResponse) {}
+
+  //Membership change PhaseII.
+  rpc MemberChangeCommit(MemberChangeInnerRequest) returns (MemberChangeInnerResponse) {}
+
+  //-----------------for election-----------------//
+  rpc PreVote(VoteRequest) returns (VoteResponse) {}
+
+  rpc Vote(VoteRequest) returns (VoteResponse) {}
+
+  rpc HeartBeat(HeartBeatRequest) returns (CommonResponse) {}
+}
+
+/*
+  The followings are the messages which can also be used in raft inner communicating , i.g, binlog item ,follower status permanent info
+   Any modification to the following message definitions should be compatible with their previous versions.
+*/
+
+message BinlogItem {
+  //required BinlogItemEntity   entity = 1;
+  required Entity  entity       = 1;
+  required uint64  timestamp_ms = 2;
+
+  //required uint32             crc32  = 2; //TODO: is this useful for data consistency checking?
+}
+
+message LogOffsetItem {
+  required  uint32   log_term       = 1;
+  required  uint64   log_idx        = 2;
+  required  uint32   offset         = 3;
+  required  uint32   key_crc32      = 4;
+  required  uint32   value_crc32    = 5;
+}
+
+message LogOffset {
+  repeated  LogOffsetItem   mappings = 1;
+}

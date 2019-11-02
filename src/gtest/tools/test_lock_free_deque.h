@@ -126,7 +126,9 @@ TEST_F(TestLockFreeDeque, ConcurrentPush) {
 
     this->LaunchMultipleThread(_push_it, _threads);
 
-    uint32_t _total = _count * _threads;
+    uint32_t _real_threads = _threads == 0 ? this->m_cpu_cores : _threads;
+
+    uint32_t _total = _count * _real_threads;
     uint64_t _time_cost_us = this->GetTimeCost();
     std::cout << "(M)operations per second:" << _total / float(_time_cost_us) << std::endl;
 
@@ -156,9 +158,12 @@ TEST_F(TestLockFreeDeque, ConcurrentPushPop) {
         }
     };
 
-    uint32_t _total = _count * 2 * ::RaftCore::Config::FLAGS_launch_threads_num;
+    uint32_t _threads = ::RaftCore::Config::FLAGS_launch_threads_num;
+    uint32_t _real_threads = _threads == 0 ? this->m_cpu_cores : _threads;
 
-    this->LaunchMultipleThread(_do_it, ::RaftCore::Config::FLAGS_launch_threads_num);
+    uint32_t _total = _count * 2 * _real_threads;
+
+    this->LaunchMultipleThread(_do_it, _threads);
 
     uint64_t _time_cost_us = this->GetTimeCost();
     std::cout << "(M)operations per second:" << _total / float(_time_cost_us) << std::endl;

@@ -968,6 +968,28 @@ Number of binlog files will increasing as data grows, in the current design, onl
 
 The communications between leader & followers are now in a way of unary rpc. Throughput is kinda lower compared to the way of bi-directional streaming rpc. It's worth improving it in that way, and this can alos mitigate [this problem](https://github.com/grpc/grpc/issues/19658).
 
+##### 6. MPMC performance issues.
+
+There are two types of MPMC here:
+* lockfree deque.
+* lockfree queue.
+
+Each has its own weird performance behaviors, take an overall look:
+![mpmc-perf-win-table](../doc/images/mpmc-perf-issue-win-table.png)
+
+![mpmc-perf-win-chart](../doc/images/mpmc-perf-issue-win-chart.png)
+
+![mpmc-perf-linux-table](../doc/images/mpmc-perf-issue-linux-table.png)
+
+![mpmc-perf-linux-chart](../doc/images/mpmc-perf-issue-linux-chart.png)
+
+Things need to figure out:
+* the reasons for the `unfinished` & `coredump` jobs.
+* why linux performs much better than windows when there are only one thread.
+* why linux performs much worse than windows when there more than one thread.
+
+Consult to [benchmark](../doc/benchmark.md) to see the windows & linux mathine configurations.
+
 #### New features
 
 ##### 1. apportion reading requests

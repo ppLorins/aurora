@@ -4,10 +4,11 @@ This is the environment for benchmark.
 
 ### Machines:
 
-|machine|OS|Compiler|Cpu|Memory|Disk|
-|--|--|--|--|--|--|
-|machineA|win10 64 pro|MSVC 19.00.24215.1 for x86|i7 8(4*2)core 4.0GHZ|16G|SSD|
-|machineB|Mac 64 High Seria 10.13.6|Apple LLVM version 10.0.0 (clang-1000.10.44.4)|i7 8(4*2)core 2.2GHZ|16G|SSD|
+|machine|OS|Compiler|build|Cpu|Memory|Disk|
+|--|--|--|--|--|--|--|
+|machineA|win10 64 pro|MSVC 19.00.24215.1 for x86|release|i7 8(4*2)core 4.0GHZ|16G|SSD|
+|machineB|Mac 64 High Seria 10.13.6|Apple LLVM version 10.0.0 (clang-1000.10.44.4)|-O3|i7 8(4*2)core 2.2GHZ|16G|SSD|
+|linux|Linux centOS 7 64|g++ (GCC) 8.3.1 20190311|-O3|Intel Xeon 8 core 3.2GHz|16G|SSD|
 
 ### Network: 
 Home router: tplink TL-WR880N 450Mbps. Latency:
@@ -58,8 +59,10 @@ If we saturating the server, the time spending on the second part will drastical
 Latency result under windows-mac case is unreliable since the network is unstable. 
 
 > ##### Result under linux:
-> * Throughput result under linux generally greater than the above result for ~50%-70%. 
+> * Throughput result under linux generally greater than the above one for ~50%-70%. 
 > * Latency result under linux is stable at 1ms~2ms for all the above cases.
+> 
+> Here is [an image](https://console.cloud.tencent.com/cvm/image/detail/5/PRIVATE_IMAGE/img-ai7bidf0) for a quick-start on linux under tencent cloud service, explicitly ask the author to shared it cause it's not supported to be public at the moment.
 
 ### Bottleneck analysis:
 First, let write an example to see the performance when there is no logic but only grpc framework.
@@ -68,6 +71,6 @@ First, let write an example to see the performance when there is no logic but on
 
 Leader's code is [here](https://gist.github.com/ppLorins/d72272b6f79c580c25a88a5bb3e489d0).
 
-We'll get a result of **~2.0w/s** throughput under the same environment and deployment. So we can almost concude that the **bottleneck is on the grpc framework itself** according to this experiment. Better practices for how to utilize grpc is still hard to figure out due to grpc is not as good as you might imagine.
+We'll get a result of **~2.0w/s** throughput with the same environment and deployment of the win-mac test case. So we can almost concude that the **bottleneck is on the grpc framework itself** according to this experiment. Better practices for how to utilize grpc is still hard to figure out due to grpc is not as good as you might imagine.
 
 

@@ -128,7 +128,7 @@ namespace RaftCore::Config {
     DEFINE_uint32(value_len, 2, "value length in unite test.");
     DEFINE_uint32(client_count, 10000, "test client count.");
     DEFINE_uint32(launch_threads_num, 0, "#threads in data structures benchmark.");
-    DEFINE_uint32(queue_initial_size, 0, "initial size for lockfree queue in unit test.");
+    DEFINE_uint32(queue_initial_size, 10000000, "initial size for lockfree queue in unit test.");
     DEFINE_uint32(queue_op_count, 1000000, "#operations for lockfree queue unit test.");
     DEFINE_uint32(conn_op_count, 100000, "#operations for follower unit test.");
 }

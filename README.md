@@ -81,7 +81,7 @@ Now, you are ready to compile aurora itself.
 
 * unix & linux & osx:
 ```console
-cd aurora && make -j4
+cd aurora && make -j4 BUILD_TYPE=[debug|release]
 ```
 
 > Note: some gcc versions(like gcc (GCC) 8.3.1) don't fully support std::atomic, thus you might need to install `libatomic` manually.

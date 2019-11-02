@@ -20,7 +20,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-**Aurora is a [Raft](https://raft.github.io) based K-V database**. The basics of the current architecture is :
+**Aurora is a cross-platform [Raft](https://raft.github.io) based K-V database**. The basics of the current architecture is :
 
 ![sys_arch](doc/images/system_architecture.png)
 
@@ -136,7 +136,7 @@ Arthur - pplorins@gmail.com
 ## Donation
 This project consumed a lot time away from the author, and if you think it helps, don't hesitate to show your generosity :moneybag: :moneybag: :moneybag:
 
-* paypal: [paypal.me link](paypal.me/arthurCoo)
+* paypal: [paypal.me link](https://www.paypal.me/arthurCoo)
 * wechat:
 
    ![wechat-pay](doc/images/pay_wechat.png)

@@ -18,23 +18,9 @@
 
 #pragma once
 
-#ifndef __GTEST_H__
-#define __GTEST_H__
+#ifndef __GTEST_ALL_CLIENT_H__
+#define __GTEST_ALL_CLIENT_H__
 
-#include "gtest/tools/test_all.h"
-#include "gtest/topology/test_all.h"
-#include "gtest/storage/test_all.h"
-#include "gtest/state/test_all.h"
-#include "gtest/guid/test_all.h"
-#include "gtest/common/test_all.h"
-#include "gtest/binlog/test_all.h"
-#include "gtest/follower/test_all.h"
-#include "gtest/service/test_all.h"
-#include "gtest/global/test_all.h"
-#include "gtest/leader/test_all.h"
-#include "gtest/candidate/test_all.h"
-#include "gtest/election/test_all.h"
-#include "gtest/member/test_all.h"
-#include "gtest/client/test_all.h"
+#include "gtest/client/test_client.h"
 
 #endif

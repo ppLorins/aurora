@@ -29,9 +29,15 @@ int main(int argc,char** argv) {
     FLAGS_log_dir = ".";
     FLAGS_logbuflevel = -1;
 
-    //Start the whole thing.
-    ::RaftCore::Global::GlobalEnv::InitialEnv();
-    ::RaftCore::Global::GlobalEnv::RunServer();
+    try {
+        //Start the whole thing.
+        ::RaftCore::Global::GlobalEnv::InitialEnv();
+        ::RaftCore::Global::GlobalEnv::RunServer();
+    }
+    catch (std::exception &e) {
+        LOG(ERROR) << "got an exception:" << e.what();
+        throw e;
+    }
 
     return 0;
 }

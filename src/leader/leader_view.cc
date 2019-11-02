@@ -68,6 +68,8 @@ LockFreeUnorderedSingleList<SingleListNode<CutEmptyContext>>     LeaderView::m_c
 
 std::atomic<uint32_t>      LeaderView::m_last_log_waiting_num;
 
+std::unordered_map<std::thread::id,uint32_t>     LeaderView::m_notify_thread_mapping;
+
 //To avoid issues caused by including header files mutually.
 using ::raft::ErrorCode;
 using ::RaftCore::BinLog::BinLogGlobal;
@@ -88,6 +90,7 @@ void LeaderView::Initialize(const ::RaftCore::Topology& _topo) noexcept {
 
     CommonView::Initialize();
 
+    //Follower initialization must being after threads-mapping initialization.
     for (const auto & _follower_addr : _topo.m_followers)
         m_hash_followers[_follower_addr] = std::shared_ptr<FollowerEntity>(new FollowerEntity(_follower_addr));
 
@@ -160,6 +163,15 @@ void LeaderView::UnInitialize() noexcept {
     m_cut_empty_list.Clear();
 
     CommonView::UnInitialize();
+}
+
+void LeaderView::UpdateThreadMapping() noexcept {
+    std::vector<std::thread::id>    _notify_thread_ids;
+    for (auto &_one_group : GlobalEnv::m_vec_notify_cq_workgroup)
+        _one_group.GetThreadId(_notify_thread_ids);
+
+    for (std::size_t n = 0; n < _notify_thread_ids.size(); ++n)
+        m_notify_thread_mapping[_notify_thread_ids[n]] = n;
 }
 
 void LeaderView::BroadcastHeatBeat() noexcept {
@@ -586,7 +598,7 @@ bool LeaderView::SyncLogAfterLCL(std::shared_ptr<BackGroundTask::SyncDataContenx
 
 bool LeaderView::ClientReactCB(std::shared_ptr<BackGroundTask::ClientReactContext> &shp_context) noexcept {
     void* _tag = shp_context->m_react_info.m_tag;
-    ::RaftCore::Common::ReactBase* _p_ins = (::RaftCore::Common::ReactBase*)_tag;
+    ::RaftCore::Common::ReactBase* _p_ins = static_cast<::RaftCore::Common::ReactBase*>(_tag);
     _p_ins->React(shp_context->m_react_info.m_cq_result);
 
     return true;

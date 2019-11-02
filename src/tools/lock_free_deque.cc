@@ -68,7 +68,7 @@ LockFreeDeque<T>::~LockFreeDeque() noexcept{
 }
 
 template <typename T>
-void LockFreeDeque<T>::Push(const std::shared_ptr<T> &p_one, uint32_t flag) noexcept {
+void LockFreeDeque<T>::Push(const std::shared_ptr<T> &p_one, EDequeNodeFlag flag) noexcept {
     //Node node points to dummy.
     auto* _p_new_node = new DequeNode<T>(p_one);
     _p_new_node->m_atomic_next.store(this->m_dummy);
@@ -98,7 +98,10 @@ void LockFreeDeque<T>::Push(const std::shared_ptr<T> &p_one, uint32_t flag) noex
         _p_from = _p_insert_after;
 
 #ifdef _DEQUE_TEST_
-    if (flag == 0)
+    if (flag == EDequeNodeFlag::NO_COUNTING)
+        return;
+
+    if (flag == EDequeNodeFlag::NORMAL)
         this->m_logical_size.fetch_add(1);
     this->m_physical_size.fetch_add(1);
 #endif
@@ -113,12 +116,12 @@ std::shared_ptr<T> LockFreeDeque<T>::Pop() noexcept {
             return std::shared_ptr<T>();
 
         //Encountering a 'fake node'.
-        if (_deque_node->m_flag == 1)
+        if (_deque_node->m_flag == EDequeNodeFlag::FAKE_NODE)
             continue;
 
         auto _transfer = _deque_node->m_val;
 
-        //Once the ownership has been copied out, the node itself cannot hold it.
+        //Once the ownership has been copied out, the node itself will release it.
         _deque_node->m_val.reset();
 
         return _transfer;
@@ -142,11 +145,11 @@ DequeNode<T>* LockFreeDeque<T>::PopNode() noexcept {
         //If '_p_cur' is the last node at the moment.
         if (_p_cur_next == this->m_dummy) {
             //If '_p_cur' is a 'fake-node'.
-            if (_p_cur->m_flag == 1)
+            if (_p_cur->m_flag == EDequeNodeFlag::FAKE_NODE)
                 return nullptr;
 
             //'_p_cur' isn't a 'fake-node'.  Push a 'fake-node' first.
-            this->Push(std::shared_ptr<T>(), 1);
+            this->Push(std::shared_ptr<T>(), EDequeNodeFlag::FAKE_NODE);
 
             //'_p_cur' next pointer changed, update it.
             _p_cur_next = _p_cur->m_atomic_next.load();
@@ -167,7 +170,10 @@ DequeNode<T>* LockFreeDeque<T>::PopNode() noexcept {
     m_garbage.PushFront(_p_cur);
 
 #ifdef _DEQUE_TEST_
-    if (_p_cur->m_flag == 0)
+    if (_p_cur->m_flag == EDequeNodeFlag::NO_COUNTING)
+        return _p_cur;
+
+    if (_p_cur->m_flag == EDequeNodeFlag::NORMAL)
         this->m_logical_size.fetch_sub(1);
     this->m_physical_size.fetch_sub(1);
 #endif
@@ -203,8 +209,9 @@ std::size_t LockFreeDeque<T>::GetSizeByIterating() const noexcept {
     int _counter = 0;
     auto _cur = this->m_head.load()->m_atomic_next.load();
     while (_cur != this->m_dummy) {
+        if (_cur->m_flag != EDequeNodeFlag::FAKE_NODE)
+            _counter++;
         _cur = _cur->m_atomic_next.load();
-        _counter++;
     }
 
     return _counter;

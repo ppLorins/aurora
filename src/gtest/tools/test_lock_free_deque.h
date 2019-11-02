@@ -26,6 +26,7 @@
 #include "tools/lock_free_deque.h"
 
 using ::RaftCore::DataStructure::LockFreeDeque;
+using ::RaftCore::DataStructure::EDequeNodeFlag;
 
 class TestLockFreeDeque : public DataStructureBase<LockFreeDeque,int> {
 
@@ -92,73 +93,77 @@ TEST_F(TestLockFreeDeque, GeneralOperation) {
 
 TEST_F(TestLockFreeDeque, ConcurrentPop) {
 
-    int _count = ::RaftCore::Config::FLAGS_deque_push_count;
+    int _count = ::RaftCore::Config::FLAGS_deque_op_count;
 
-    for (int i = 0; i < _count;++i)
-        this->m_ds.Push(std::make_shared<int>(i));
-
-    //std::cout << "push done,sleeping..." << std::endl;;
-
-    //std::this_thread::sleep_for(std::chrono::seconds(5));
+    for (int i = 0; i < _count; ++i)
+        this->m_ds.Push(std::make_shared<int>(i), EDequeNodeFlag::NO_COUNTING);
 
     auto _pop_it = [&](int idx){
         while (auto shp = this->m_ds.Pop());
-            //std::cout <<  "got ";
-        std::cout << "thread pop end " << std::this_thread::get_id() << std::endl;
     };
 
-    this->LaunchMultipleThread(_pop_it);
+    this->LaunchMultipleThread(_pop_it, ::RaftCore::Config::FLAGS_launch_threads_num);
 
-    std::cout << "pop done,sleeping --debug size:" << this->m_ds.GetSizeByIterating() << std::endl;
+    uint64_t _time_cost_us = this->GetTimeCost();
+    std::cout << "(M)operations per second:" << _count / float(_time_cost_us) << std::endl;
 
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+    std::this_thread::sleep_for(std::chrono::seconds(3));
 
-    ASSERT_EQ(this->m_ds.GetLogicalSize(),0);
+    ASSERT_EQ(this->m_ds.GetSizeByIterating(),0);
 }
 
 TEST_F(TestLockFreeDeque, ConcurrentPush) {
 
-    int _count = 10000;
+    int _count = ::RaftCore::Config::FLAGS_deque_op_count;
     std::shared_ptr<int> _shp(new int(7));
+
     auto _push_it = [&](int idx){
-        for (int i = 0; i < _count;++i) {
-            //std::cout << "thread : " << std::this_thread::get_id() << " is pushing" << std::endl;
-            this->m_ds.Push(_shp);
-        }
+        for (int i = 0; i < _count;++i)
+            this->m_ds.Push(_shp, EDequeNodeFlag::NO_COUNTING);
     };
 
-    this->LaunchMultipleThread(_push_it);
+    uint32_t _threads = ::RaftCore::Config::FLAGS_launch_threads_num;
 
-    ASSERT_EQ(this->m_ds.Size(),this->m_cpu_cores * _count);
+    this->LaunchMultipleThread(_push_it, _threads);
+
+    uint32_t _total = _count * _threads;
+    uint64_t _time_cost_us = this->GetTimeCost();
+    std::cout << "(M)operations per second:" << _total / float(_time_cost_us) << std::endl;
+
+    ASSERT_EQ(this->m_ds.GetSizeByIterating(), _total);
 }
 
 TEST_F(TestLockFreeDeque, ConcurrentPushPop) {
 
-    int _count = 100;
-    for (int i = 0; i < _count;++i)
-        this->m_ds.Push(std::make_shared<int>(i));
+    int _initial_count = 100;
+    for (int i = 0; i < _initial_count;++i)
+        this->m_ds.Push(std::make_shared<int>(i), EDequeNodeFlag::NO_COUNTING);
+
+    uint32_t _count = ::RaftCore::Config::FLAGS_deque_op_count;
 
     auto _do_it = [&](int idx){
-        int _round = 100000;
-        for (int i = 0; i < _round;++i) {
+        for (std::size_t i = 0; i < _count;++i) {
             auto shp = this->m_ds.Pop();
             if (!shp) {
                 std::cout << "thread:" << std::this_thread::get_id() << " pop empty"
-                    << ",size:" << this->m_ds.Size() << ",i:" << i << std::endl;
+                    << ",size:" << this->m_ds.GetSizeByIterating() << ",i:" << i << std::endl;
                 continue;
             }
 
-            auto x = *shp;
-            *shp = _count + x + 1;
-            this->m_ds.Push(shp);
+            int x = *shp;
+            *shp = _initial_count + x + 1;
+            this->m_ds.Push(shp, EDequeNodeFlag::NO_COUNTING);
         }
     };
 
-    this->LaunchMultipleThread(_do_it);
+    uint32_t _total = _count * 2 * ::RaftCore::Config::FLAGS_launch_threads_num;
 
-    std::cout << "--debug size:" << this->m_ds.GetSizeByIterating() << std::endl;
+    this->LaunchMultipleThread(_do_it, ::RaftCore::Config::FLAGS_launch_threads_num);
 
-    ASSERT_EQ(this->m_ds.Size(),_count);
+    uint64_t _time_cost_us = this->GetTimeCost();
+    std::cout << "(M)operations per second:" << _total / float(_time_cost_us) << std::endl;
+
+    ASSERT_EQ(this->m_ds.GetSizeByIterating(), _initial_count);
 }
 
 

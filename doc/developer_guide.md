@@ -17,7 +17,7 @@
     * [Lockfree hash](#lockfree-hash)
     * [Lockfree deque](#lockfree-deque)
     * [Lockfree MPMC queue](#lockfree-mpmc-queue)
-    * [Lockfree priority queue](#lockfree-priority-queue)
+    * [Lockfree priority queue](#priorify-queue)
   * [Basic workflow](#basic-workflow)
     * [Follower workflow](#follower-workflow)
     * [Leader workflow](#leader-workflow)
@@ -387,7 +387,7 @@ The basic idea of consuming is very like that of producing, and keep in mind tha
 
 ![deque-pop-1](images/deque-pop-1.png)
 
-The overall process of consuming is trying to move `dummy->next` to its next one by one. Details will not be explained, reference the counterpart of producing, they are basically the same.
+The overall process of consuming is trying to move `dummy->next` to its next one by one. Details will not be explained, consult to the counterpart of producing, they are basically the same.
 
 ##### 3. About deque's wait-free
 This is the tricky part of `LockFreeDeque`: To achieve the [wait-free](https://en.wikipedia.org/wiki/Non-blocking_algorithm) semantic as much as possible, there is no boundary between the nodes being produced and the nodes being consumed. Therefore, a node can be immediately consumed so long as it emerged on the list regardless whether the `tail` pointer has passed over it or not, and a node can also be immediately produced once it became producible(empty), vice versa. This is an aggressive strategy, a double-edged sword, it pushes us more close to `wait-free` but also has its own downside: we cannot freeing a node just after it has been consumed since the node may still being used by other threads which are trying to move the `tail` cursor forward. The freeing operation has to be deferred: we first push the consumed node into a `garbage list`, a dedicated thread will polling periodically from it and the node be physically freed later. 

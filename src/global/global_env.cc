@@ -50,8 +50,6 @@ std::vector<ReactWorkGroup<CompletionQueue>>    GlobalEnv::m_vec_client_cq_workg
 
 std::shared_ptr<::raft::RaftService::AsyncService>   GlobalEnv::m_async_service;
 
-std::atomic<int>  GlobalEnv::m_released_cq_idx;
-
 volatile bool  GlobalEnv::m_cq_fully_shutdown = false;
 
 std::string   GlobalEnv::m_server_addr;
@@ -63,17 +61,8 @@ bool GlobalEnv::IsRunning() noexcept {
     return m_running;
 }
 
-TypePtrCQ<CompletionQueue> GlobalEnv::GetClientCQInstance() noexcept {
-
-#ifdef _CONN_TEST_
-    //Just return a casual CQ.
-    return m_vec_notify_cq_workgroup[0].GetCQ();
-#endif
-
-    //m_released_cq_idx needn't to be atomic, what we need is just a approximately accurate idx.
-    int _before_val = m_released_cq_idx.fetch_add(1);
-    int _idx = _before_val % m_vec_client_cq_workgroup.size();
-    return m_vec_client_cq_workgroup[_idx].GetCQ();
+TypePtrCQ<CompletionQueue> GlobalEnv::GetClientCQInstance(uint32_t idx) noexcept {
+    return m_vec_client_cq_workgroup[idx].GetCQ();
 }
 
 void GlobalEnv::InitGrpcEnv() noexcept {
@@ -88,20 +77,25 @@ void GlobalEnv::InitGrpcEnv() noexcept {
 
     TypeReactorFunc  _reactor = ::RaftCore::Common::ReactBase::GeneralReacting;
 
-    for (std::size_t i = 0; i < ::RaftCore::Config::FLAGS_notify_cq_num; ++i) {
-        uint32_t _notify_cq_thread_num = ::RaftCore::Config::FLAGS_notify_cq_threads;
+    uint32_t _notify_cq_thread_num = ::RaftCore::Config::FLAGS_notify_cq_threads;
+    uint32_t _notify_cq_num = ::RaftCore::Config::FLAGS_notify_cq_num;
+
+    for (std::size_t i = 0; i < _notify_cq_num; ++i)
         m_vec_notify_cq_workgroup.emplace_back(m_builder.AddCompletionQueue(), _reactor, _notify_cq_thread_num);
-    }
 
     for (std::size_t i = 0; i < ::RaftCore::Config::FLAGS_call_cq_num; ++i) {
         uint32_t _call_cq_thread_num = ::RaftCore::Config::FLAGS_call_cq_threads;
         m_vec_call_cq_workgroup.emplace_back(m_builder.AddCompletionQueue(), _reactor, _call_cq_thread_num);
     }
 
+    //Each CQ can only get one thread to achieve maximum entrusting speed.
+    uint32_t _client_cq_num = _notify_cq_thread_num * _notify_cq_num;
+
     //The additional CQ is for the response processing dedicated CQ.
     if (::RaftCore::State::StateMgr::GetRole() == State::RaftRole::LEADER) {
         m_vec_client_cq_workgroup.clear();
-        for (std::size_t i = 0; i < ::RaftCore::Config::FLAGS_client_cq_num; ++i) {
+        for (std::size_t i = 0; i < _client_cq_num; ++i) {
+
             uint32_t _client_cq_thread_num = ::RaftCore::Config::FLAGS_client_thread_num;
             TypeReactorFunc _client_reactor = ::RaftCore::Leader::LeaderView::ClientThreadReacting;
 
@@ -109,8 +103,6 @@ void GlobalEnv::InitGrpcEnv() noexcept {
             m_vec_client_cq_workgroup.emplace_back(_shp_cq, _client_reactor, _client_cq_thread_num);
         }
     }
-
-    m_released_cq_idx.store(0);
 }
 
 void GlobalEnv::StartGrpcService() noexcept{
@@ -132,6 +124,9 @@ void GlobalEnv::StartGrpcService() noexcept{
 
     LOG(INFO) << "spawning notify_cq polling threads.";
     _start_workgroup_threads(m_vec_notify_cq_workgroup);
+
+    //After starting notify threads, we need to update the mapping.
+    ::RaftCore::Leader::LeaderView::UpdateThreadMapping();
 
     LOG(INFO) << "spawning call_cq polling threads.";
     _start_workgroup_threads(m_vec_call_cq_workgroup);
@@ -215,6 +210,7 @@ void GlobalEnv::InitialEnv(bool switching_role) noexcept {
     CHECK(::RaftCore::Config::FLAGS_leader_heartbeat_interval_ms < ::RaftCore::Config::FLAGS_election_heartbeat_timeo_ms);
     CHECK(::RaftCore::Config::FLAGS_memory_table_max_item < ::RaftCore::Config::FLAGS_binlog_max_log_num);
     CHECK(::RaftCore::Config::FLAGS_garbage_deque_retain_num >= 1);
+    CHECK(::RaftCore::Config::FLAGS_notify_cq_num * ::RaftCore::Config::FLAGS_notify_cq_threads <= ::RaftCore::Config::FLAGS_client_pool_size);
 
     //TODO: check #threads doesn't exceeds m_step_len
 
@@ -259,8 +255,10 @@ void GlobalEnv::InitialEnv(bool switching_role) noexcept {
         InitGrpcEnv();
 
     //#-------------------------------Init leader-------------------------------#//
-    if (_current_role == ::RaftCore::State::RaftRole::LEADER)
+    if (_current_role == ::RaftCore::State::RaftRole::LEADER) {
+        //LeaderView initialization must be after grpc env initial.
         ::RaftCore::Leader::LeaderView::Initialize(global_topo);
+    }
 
     //#-------------------------------Init Follower-------------------------------#//
     if (_current_role == ::RaftCore::State::RaftRole::FOLLOWER)

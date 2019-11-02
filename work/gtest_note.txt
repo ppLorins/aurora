@@ -1,0 +1,38 @@
+test for follower service: 
+--gtest_filter=TestFollowerService.GeneralOperation --checking_heartbeat=false --leader_append_entries_rpc_timeo_ms=500
+--gtest_filter=TestFollowerService.ConcurrentOperation --checking_heartbeat=false 
+--gtest_filter=TestFollowerService.Benchmark --checking_heartbeat=false --iterating_wait_timeo_us=2000000 --leader_append_entries_rpc_timeo_ms=10000 --leader_commit_entries_rpc_timeo_ms=5000 --follower_svc_benchmark_req_round=50000 --benchmark_client_cq_num=1
+
+
+backend single follower service: 
+--checking_heartbeat=false --iterating_wait_timeo_us=2000000 --port=10030
+
+
+test for leader service: 
+--gtest_filter=TestLeaderService.GeneralOperation --do_heartbeat=false --checking_heartbeat=false --client_cq_num=1 --client_thread_num=1 --leader_append_entries_rpc_timeo_ms=500 --leader_commit_entries_rpc_timeo_ms=500 --client_write_timo_ms=50
+--gtest_filter=TestLeaderService.Benchmark --do_heartbeat=false --checking_heartbeat=false --iterating_wait_timeo_us=2000000 --client_cq_num=1 --client_thread_num=1 --leader_append_entries_rpc_timeo_ms=5000 --leader_commit_entries_rpc_timeo_ms=5000 --leader_svc_benchmark_req_count=2000 --client_write_timo_ms=5000 --benchmark_client_cq_num=2 --benchmark_client_polling_thread_num_per_cq=2
+
+
+independent servers:
+leader:   --do_heartbeat=false --iterating_wait_timeo_us=2000000 --port=10010 --leader_append_entries_rpc_timeo_ms=5000 --leader_commit_entries_rpc_timeo_ms=5000 --client_pool_size=50000
+follower: --checking_heartbeat=false --iterating_wait_timeo_us=50000 --disorder_msg_timeo_ms=100000 --port=10020
+		  --checking_heartbeat=false --iterating_wait_timeo_us=50000 --disorder_msg_timeo_ms=100000 --port=10021
+		  --checking_heartbeat=false --iterating_wait_timeo_us=50000 --disorder_msg_timeo_ms=100000 --port=10022
+benchmark:  --gtest_filter=TestLeaderServiceClient.Benchmark --client_write_timo_ms=5000 --benchmark_client_cq_num=1 --benchmark_client_polling_thread_num_per_cq=2 --leader_svc_benchmark_req_count=60000 --benchmark_client_entrusting_thread_num=1
+
+
+test storage:
+--gtest_filter=TestStorage.GeneralOperation --memory_table_max_item=30 --storage_get_slice_count=100
+
+
+ultra benchmark:
+
+follower-service-client: 
+--gtest_filter=TestFollowerServiceClient.Benchmark --leader_append_entries_rpc_timeo_ms=100000 --leader_commit_entries_rpc_timeo_ms=100000 --benchmark_client_cq_num=1 --benchmark_client_polling_thread_num_per_cq=2  --follower_svc_benchmark_req_round=20000
+
+follower-service:
+--checking_heartbeat=false --iterating_wait_timeo_us=50000 --disorder_msg_timeo_ms=100000 --port=10020
+
+
+ 
+ 

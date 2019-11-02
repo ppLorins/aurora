@@ -24,8 +24,8 @@ namespace RaftCore::Config {
     DEFINE_uint32(notify_cq_threads, 4, "#threads polling on each notify CQ.");
     DEFINE_uint32(call_cq_num, 2, "#call CQ the server use.");
     DEFINE_uint32(call_cq_threads, 2, "#threads polling on each call CQ.");
-    DEFINE_uint32(client_cq_num, 2, "#completion queues dedicated for process backend RPCs in the leader.");
-    DEFINE_uint32(client_thread_num, 2, "#threads for each client CQ.");
+    DEFINE_uint32(client_thread_num, 2, "#threads polling on each client CQ.");
+
     DEFINE_uint32(request_pool_size, 100, "#call data instance each thread hold.");
 
     DEFINE_uint32(binlog_append_file_timeo_us, 1500, "append binlog cv wait timeout in microseconds .");
@@ -112,18 +112,23 @@ namespace RaftCore::Config {
     DEFINE_bool(clear_existing_sstable_files, true, "whether delete all existing sstable files or not.");
     DEFINE_uint32(hash_slot_num, 500, "#slots in lockfree hash.");
     DEFINE_uint32(resync_log_start_idx, 8057, "#log start index for the LeaderView::ResyncLog interface.");
-    DEFINE_uint32(deque_push_count, 100000, "#elements pushed before testing.");
+    DEFINE_uint32(deque_op_count, 100000, "#operations for lockfree deque testing.");
     DEFINE_uint32(meta_count, 80000, "#meta items for testing memory useage.");
     DEFINE_uint32(follower_svc_benchmark_req_round, 10000, "#rounds(phaseI+phaseII) of requests sent during follower service benchmarking.");
     DEFINE_uint32(leader_svc_benchmark_req_count, 10000, "#requests of requests sent during leader service benchmarking.");
     DEFINE_uint32(benchmark_client_cq_num, 2, "#CQ client used to trigger the requests.");
-    DEFINE_uint32(benchmark_client_thread_num_per_cq, 4, "#threads client per CQ used to trigger the requests.");
+    DEFINE_uint32(benchmark_client_polling_thread_num_per_cq, 4, "#threads client per CQ used to trigger the requests.");
     DEFINE_uint32(client_write_timo_ms, 50, "timeout value(ms) for client writing.");
-    DEFINE_bool(benchmark_client_split_entrusting, true, "whether to split the benchmark client entrusing process.");
+    DEFINE_uint32(benchmark_client_entrusting_thread_num, 1, ".");
     DEFINE_string(target_ip, "default_none", "the target ip for a new benchmark server.");
     DEFINE_string(my_ip, "default_none", "the ip addr to indicate myself in client req.");
     DEFINE_uint32(storage_get_slice_count, 10, "#elements get from get_slice().");
     DEFINE_uint32(retain_num_unordered_single_list, 100, "retain num for unordered_single_list unit test.");
     DEFINE_bool(do_commit, false, "whether issue the commit request or not after appenedEntries.");
     DEFINE_uint32(value_len, 2, "value length in unite test.");
+    DEFINE_uint32(client_count, 10000, "test client count.");
+    DEFINE_uint32(launch_threads_num, 0, "#threads in data structures benchmark.");
+    DEFINE_uint32(queue_initial_size, 0, "initial size for lockfree queue in unit test.");
+    DEFINE_uint32(queue_op_count, 1000000, "#operations for lockfree queue unit test.");
+    DEFINE_uint32(conn_op_count, 100000, "#operations for follower unit test.");
 }

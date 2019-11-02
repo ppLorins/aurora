@@ -31,12 +31,13 @@ using ::RaftCore::Member::MemberMgr;
 using ::RaftCore::Election::ElectionMgr;
 
 AppendEntriesAsyncClient::AppendEntriesAsyncClient(std::shared_ptr<::grpc::Channel> shp_channel,
-    std::shared_ptr<::grpc::CompletionQueue> shp_cq)
+    std::shared_ptr<::grpc::CompletionQueue> shp_cq, bool delegate_me)
     : UnaryAsyncClient<::raft::AppendEntriesRequest, ::raft::AppendEntriesResponse,
     AppendEntriesAsyncClient>(shp_channel, shp_cq) {
 
     //Give myself a long lived delegator.
-    this->OwnershipDelegator<AppendEntriesAsyncClient>::ResetOwnership(this);
+    if (delegate_me)
+        this->OwnershipDelegator<AppendEntriesAsyncClient>::ResetOwnership(this);
 }
 
 AppendEntriesAsyncClient::~AppendEntriesAsyncClient() {}

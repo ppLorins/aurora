@@ -86,14 +86,18 @@ TypeTimePoint StartTimeing() {
     return std::chrono::steady_clock::now();
 }
 
-void EndTiming(const TypeTimePoint &tp_start, const char* operation_name, const LogIdentifier *p_cur_id) {
+uint64_t EndTiming(const TypeTimePoint &tp_start, const char* operation_name, const LogIdentifier *p_cur_id) {
     auto _now = std::chrono::steady_clock::now();
     std::chrono::microseconds _us = std::chrono::duration_cast<std::chrono::microseconds>(_now - tp_start);
 
+    uint64_t _cost_us = _us.count();
+
     if (p_cur_id == nullptr)
-        VLOG(88) << operation_name << " cost us:" << _us.count();
+        VLOG(88) << operation_name << " cost us:" << _cost_us;
     else
-        VLOG(88) << operation_name <<  " cost us:" << _us.count() << " ,idx:" << *p_cur_id;
+        VLOG(88) << operation_name << " cost us:" << _cost_us << " ,idx:" << *p_cur_id;
+
+    return _cost_us;
 }
 
 void StringSplit(const std::string &input, char delimiter, std::set<std::string> &output) {

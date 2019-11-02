@@ -38,51 +38,57 @@ public:
 
     virtual std::string GetLeaderAddr()const noexcept = 0;
 
-    virtual void EntrustClient2CQ(std::shared_ptr<Channel> shp_channel,
-        std::shared_ptr<CompletionQueue> shp_cq, int idx)noexcept override {
-
-        //Shouldn't start with 0 when doing appendEntries.
-        idx += 1;
-
-        auto *_p_append_client =  new AppendEntrieBenchmarkClient(shp_channel, shp_cq);
-
-        std::shared_ptr<AppendEntriesRequest> _shp_req(new AppendEntriesRequest());
-
-        std::string _my_addr = this->GetLeaderAddr();
-        if (::RaftCore::Config::FLAGS_my_ip != std::string("default_none"))
-            _my_addr = ::RaftCore::Config::FLAGS_my_ip;
-
-        _shp_req->mutable_base()->set_addr(_my_addr);
-        _shp_req->mutable_base()->set_term(0);
-
-        auto _p_entry = _shp_req->add_replicate_entity();
-        auto _p_entity_id = _p_entry->mutable_entity_id();
-        _p_entity_id->set_term(0);
-        _p_entity_id->set_idx(idx);
-
-        auto _p_pre_entity_id = _p_entry->mutable_pre_log_id();
-        _p_pre_entity_id->set_term(0);
-        _p_pre_entity_id->set_idx(idx - 1);
-
-        auto _p_wop = _p_entry->mutable_write_op();
-
-        _p_wop->set_key("follower_benchmark_key_" + std::to_string(idx));
-        _p_wop->set_value("follower_benchmark_val_" + std::to_string(idx));
+    virtual void EntrustBatch(std::shared_ptr<Channel> &shp_channel,
+        std::shared_ptr<CompletionQueue> &shp_cq, uint32_t total,
+        const FIdxGenertor &generator)noexcept override {
 
         static std::tm    m_start_tm = { 0, 0, 0, 26, 9 - 1, 2019 - 1900 };
         static auto  m_start_tp = std::chrono::system_clock::from_time_t(std::mktime(&m_start_tm));
-        auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - m_start_tp);
-        _shp_req->set_debug_info(std::to_string(us.count()));
 
-        auto _req_setter = [&_shp_req](std::shared_ptr<::raft::AppendEntriesRequest>& _target)->void {
-            _target = _shp_req;
-        };
-        auto _f_prepare =  std::bind(&::raft::RaftService::Stub::PrepareAsyncAppendEntries,
-                                    _p_append_client->GetStub().get(), std::placeholders::_1,
-                                    std::placeholders::_2, std::placeholders::_3);
-        _p_append_client->EntrustRequest(_req_setter, _f_prepare,
-            ::RaftCore::Config::FLAGS_leader_append_entries_rpc_timeo_ms);
+        AppendEntrieBenchmarkClient *_p_client = new AppendEntrieBenchmarkClient(shp_channel, shp_cq, total);
+
+        for (std::size_t n = 0; n < total; ++n) {
+            //Shouldn't start with 0 when doing appendEntries.
+            uint32_t _req_idx = generator(n) + 1;
+
+            std::shared_ptr<AppendEntriesRequest> _shp_req(new AppendEntriesRequest());
+
+            std::string _my_addr = this->GetLeaderAddr();
+            if (::RaftCore::Config::FLAGS_my_ip != std::string("default_none"))
+                _my_addr = ::RaftCore::Config::FLAGS_my_ip;
+
+            _shp_req->mutable_base()->set_addr(_my_addr);
+            _shp_req->mutable_base()->set_term(0);
+
+            auto _p_entry = _shp_req->add_replicate_entity();
+            auto _p_entity_id = _p_entry->mutable_entity_id();
+            _p_entity_id->set_term(0);
+            _p_entity_id->set_idx(_req_idx);
+
+            auto _p_pre_entity_id = _p_entry->mutable_pre_log_id();
+            _p_pre_entity_id->set_term(0);
+            _p_pre_entity_id->set_idx(_req_idx - 1);
+
+            auto _p_wop = _p_entry->mutable_write_op();
+
+            _p_wop->set_key("follower_benchmark_key_" + std::to_string(_req_idx));
+            _p_wop->set_value("follower_benchmark_val_" + std::to_string(_req_idx));
+
+
+            auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - m_start_tp);
+            _shp_req->set_debug_info(std::to_string(us.count()));
+
+            auto _req_setter = [&_shp_req](std::shared_ptr<::raft::AppendEntriesRequest>& _target)->void {
+                _target = _shp_req;
+            };
+            auto _f_prepare =  std::bind(&::raft::RaftService::Stub::PrepareAsyncAppendEntries,
+                                        _p_client->GetStub().get(), std::placeholders::_1,
+                                        std::placeholders::_2, std::placeholders::_3);
+            _p_client->EntrustRequest(_req_setter, _f_prepare,
+                ::RaftCore::Config::FLAGS_leader_append_entries_rpc_timeo_ms);
+        }
     }
+
 
 };
 

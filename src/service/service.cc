@@ -166,19 +166,19 @@ Write::Write(std::shared_ptr<RaftService::AsyncService> shp_svc,
     std::shared_ptr<ServerCompletionQueue> &shp_call_cq) noexcept {
 
     /*Set parent delegator's managed ownership, need to ahead of the following 'Initialize' since otherwise
-      this object will serving request promptly while not ready for that.  */
+      this object will serving request promptly yet not ready for that.  */
     this->ResetOwnership(this);
 
-    this->Initialize(shp_svc, shp_notify_cq, shp_call_cq);
-
-    this->m_async_service->RequestWrite(&this->m_server_context, &this->m_request, &this->m_responder,
-                                        this->m_server_call_cq.get(), this->m_server_notify_cq.get(), this);
     this->m_phaseI_determined_point.store(false);
     this->m_phaseII_ready_list.store(nullptr);
 
 #ifdef _SVC_WRITE_TEST_
-    this->m_start_tp = std::chrono::system_clock::from_time_t(std::mktime(&m_start_tm));
+    this->m_epoch = std::chrono::system_clock::from_time_t(std::mktime(&m_start_tm));
 #endif
+
+    this->Initialize(shp_svc, shp_notify_cq, shp_call_cq);
+    this->m_async_service->RequestWrite(&this->m_server_context, &this->m_request, &this->m_responder,
+                                        this->m_server_call_cq.get(), this->m_server_notify_cq.get(), this);
 }
 
 Write::~Write() {}
@@ -234,6 +234,9 @@ bool Write::PrepareReplicationStatistic(std::list<std::shared_ptr<AppendEntriesA
 
     int _entrusted_client_num = 0;
     auto &_phaseI_state  = this->m_shp_req_ctx->m_phaseI_state;
+
+    uint32_t _total_us = 0;
+
     auto _prepare_statistic = [&](TypePtrFollowerEntity& shp_follower) {
         if (shp_follower->m_status != FollowerStatus::NORMAL) {
             LOG(WARNING) << "follower " << shp_follower->my_addr << " is under "
@@ -242,7 +245,8 @@ bool Write::PrepareReplicationStatistic(std::list<std::shared_ptr<AppendEntriesA
             return;
         }
 
-        auto _shp_client = shp_follower->m_append_client_pool->Fetch();
+        void* _p_pool = nullptr;
+        auto _shp_client = shp_follower->FetchAppendClient(_p_pool);
 
         VLOG(90) << "AppendEntriesAsyncClient fetched:" << shp_follower->my_addr;
 
@@ -251,7 +255,7 @@ bool Write::PrepareReplicationStatistic(std::list<std::shared_ptr<AppendEntriesA
         /*The self-delegated ownership will be existing at the mean time, we can just copy it from the
           delegator.  */
         _shp_client->OwnershipDelegator<Write>::CopyOwnership(this->GetOwnership());
-        _shp_client->PushCallBackArgs(shp_follower->m_append_client_pool.get());
+        _shp_client->PushCallBackArgs(_p_pool);
         entrust_list.emplace_back(_shp_client);
 
         _entrusted_client_num++;
@@ -332,7 +336,7 @@ bool Write::PrepareReplicationContext(uint32_t cur_term, uint32_t pre_term) noex
     auto _p_wop = _p_entry->mutable_write_op();
 
 #ifdef _SVC_WRITE_TEST_
-    auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - this->m_start_tp);
+    auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - this->m_epoch);
     _shp_req->set_debug_info(std::to_string(us.count()));
 #endif
 
@@ -371,6 +375,7 @@ bool Write::PrepareReplicationContext(uint32_t cur_term, uint32_t pre_term) noex
 bool Write::BeforeReplicate() noexcept {
 
     this->m_tp_start = ::RaftCore::Tools::StartTimeing();
+
     this->m_rsp = this->m_response.mutable_client_comm_rsp();
 
     if (!this->LeaderCheckVailidity(this->m_rsp))
@@ -388,13 +393,11 @@ bool Write::BeforeReplicate() noexcept {
     auto _p_test_wop = this->m_request.mutable_req();
     std::string _idx = std::to_string(this->m_guid_pair.m_cur_guid);
 
-    const std::string &_val = _p_test_wop->value();
-    std::size_t _pos = _val.find(_WRITE_VAL_TS_);
-    CHECK(_pos != std::string::npos);
+    const uint32_t &_val = this->m_request.timestamp();
 
-    std::string _start_us = _val.substr(_pos + std::strlen(_WRITE_VAL_TS_));
-    this->m_rsp->set_err_msg(_start_us);
+    this->m_rsp->set_err_msg(std::to_string(_val));
     _p_test_wop->set_key("test_client_key_" + _idx);
+
 #endif
 
     this->m_client_request = &this->m_request;
@@ -448,8 +451,8 @@ bool Write::BeforeReplicate() noexcept {
     //this->FinishRequest(WriteProcessStage::FRONT_FINISH);
 
 #ifdef _SVC_WRITE_TEST_
-    auto _now_us = (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - this->m_start_tp)).count();
-    uint64_t _lantency_us = (uint64_t)(_now_us - std::atoll(_start_us.c_str()));
+    auto _now_us = (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - this->m_epoch)).count();
+    uint64_t _lantency_us = (uint64_t)(_now_us - _val);
     VLOG(2) << "server side single req latency(us):" << _lantency_us << ",idx:"
             << this->m_shp_req_ctx->m_cur_log_id;
 #endif
@@ -585,7 +588,8 @@ void Write::EntrustCommitRequest(FollowerEntity* ptr_follower, AppendEntriesAsyn
     auto &_phaseII_state = this->m_shp_req_ctx->m_phaseII_state;
     _phaseII_state.IncreaseEntrust(ptr_follower->m_joint_consensus_flag);
 
-    auto _shp_client = ptr_follower->m_commit_client_pool->Fetch();
+    void* _p_pool = nullptr;
+    auto _shp_client = ptr_follower->FetchCommitClient(_p_pool);
 
     VLOG(90) << "CommitEntriesAsyncClient fetched:" << ptr_follower->my_addr << ",log:" << this->m_shp_req_ctx->m_cur_log_id;
 
@@ -595,7 +599,7 @@ void Write::EntrustCommitRequest(FollowerEntity* ptr_follower, AppendEntriesAsyn
       from the delegator. */
     auto _shp_write = ptr_client->OwnershipDelegator<Write>::GetOwnership();
     _shp_client->OwnershipDelegator<Write>::CopyOwnership(_shp_write);
-    _shp_client->PushCallBackArgs(ptr_follower->m_commit_client_pool.get());
+    _shp_client->PushCallBackArgs(_p_pool);
 
     auto _req_setter = [&](std::shared_ptr<::raft::CommitEntryRequest>& _target)->void {
         _target = this->m_shp_commit_req;
@@ -800,9 +804,7 @@ bool Write::AppendBinlog(AppendEntriesAsyncClient* ptr_client) noexcept{
         return !::RaftCore::Common::EntityIDLarger(one.GetEntity()->entity_id(), _log_id);
     };
 
-    //std::unique_lock<std::mutex> _mutex_lock(LeaderView::m_cv_mutex);
     DoubleListNode<MemoryLogItemLeader> *_p_head = LeaderView::m_entity_pending_list.CutHead(_cmp);
-    //_mutex_lock.unlock();
 
     if (_p_head == nullptr) {
         VLOG(89) << "CutHead empty occur, transfer to bg list:" << _log_id;
@@ -948,8 +950,8 @@ void Write::CutEmptyRoutine() noexcept {
             continue;
 
         /* Double check here for 2 reasons:
-           1. For the way of TrivialLockSingleList' work, to get rid of missing elements inserted at
-             head at the moment of cuthead.
+           1. For the way of TrivialLockSingleList' work, to get rid of missing elements haven't finish
+              inserting during the first iterating of _lambda.
            2. failed write requests need a recheck, and reset its result to SUCCESS if necessary.  */
         LeaderView::m_cut_empty_list.IterateCutHead(_lambda, _p_head);
 
@@ -1074,9 +1076,10 @@ void Write::LastlogResolve(bool result, uint64_t last_released_guid) noexcept {
     auto _lambda = [&](std::shared_ptr<CutEmptyContext> &one) {
         auto &_p_req = one->m_write_request;
 
+#ifdef _SVC_WRITE_TEST_
         const auto &_entity_id  = _p_req->GetInnerLog()->GetEntity()->entity_id();
-
         VLOG(89) << "start processing the bg list after last log resolved:" << _entity_id.idx();
+#endif
 
         _p_req->AfterAppendBinlog();
         return true;
@@ -1235,12 +1238,10 @@ void AppendEntries::ProcessOverlappedLog() noexcept {
 
     } else if (_revert_code == BinLogOperator::BinlogErrorCode::SUCCEED_TRUNCATED) {
 
-        /*Note: this elif section may be executed simultaneously and lead to misunderstanding for
-                'm_phaseI_pending_list', but will easily get resolved by a new RESYNC_LOG
-                triggered on the lead side.  */
+        /*Note: this elif section may executing simultaneously, but the follower would quickly get
+                resolved by a new RESYNC_LOG command issued by the lead.  */
 
         static std::mutex _m;
-
         std::unique_lock<std::mutex> _mutex_lock(_m);
 
         //In case of successfully reverting log, all the pending lists are also become invalid,need to be cleared.
@@ -1265,25 +1266,12 @@ bool AppendEntries::BeforeJudgeOrder() noexcept {
     this->m_rsp = this->m_response.mutable_comm_rsp();
     this->m_rsp->set_result(ErrorCode::SUCCESS);
 
-    //Testing...
     /*
+    //Testing...
     const auto &_entity = this->m_request.replicate_entity(this->m_request.replicate_entity_size() - 1);
     uint32_t _idx = _entity.entity_id().idx();
 
     VLOG(89) << " msg received & idx:" << _idx;
-
-    const auto& _start_ts = this->m_request.debug_info();
-
-#ifdef _SVC_APPEND_ENTRIES_TEST_
-    auto _start_us = std::atoll(_start_ts.c_str());
-    auto _now_us = (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - this->m_start_tp)).count();
-    uint64_t _lantency_us = (uint64_t)(_now_us - _start_us);
-    VLOG(2) << "server side single req latency(us):" << _lantency_us << ",now:" << _now_us
-        << ",start:" << _start_us << ", tp:" << std::chrono::duration_cast<std::chrono::seconds>(this->m_start_tp.time_since_epoch()).count();
-#endif
-
-    this->m_rsp->set_err_msg(_start_ts);
-
     return true;
     */
 
@@ -1409,8 +1397,8 @@ void AppendEntries::DisorderLogRoutine() noexcept {
 
         //_shp_last_return may become invalid here.
 
-        /*For the way of TrivialLockDoubleList' work, here we need a double check to get rid of
-           missing elements inserted at head at the moment of CutHead.  */
+        /*For the way of TrivialLockSingleList' work, to get rid of missing elements haven't finish
+          inserting during the first iterating of _lambda */
         FollowerView::m_disorder_list.IterateCutHead(_lambda, _p_head);
 
         FollowerView::m_disorder_garbage.PushFront(_p_head);

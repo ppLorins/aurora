@@ -34,8 +34,10 @@ using ::RaftCore::DataStructure::AtomicPtrSingleListNode;
 using ::RaftCore::DataStructure::UnorderedSingleListNode;
 using ::RaftCore::DataStructure::LockFreeUnorderedSingleList;
 
+enum class EDequeNodeFlag { NORMAL = 0, FAKE_NODE, NO_COUNTING };
+
 template <typename T>
-class DequeNode final{
+class DequeNode final {
 
 public:
 
@@ -49,9 +51,7 @@ public:
 
     std::shared_ptr<T>    m_val;
 
-    /* 0: normal node.
-       1: fake node.  */
-    uint32_t   m_flag = 0;
+    EDequeNodeFlag   m_flag = EDequeNodeFlag::NORMAL;
 };
 
 template <typename T>
@@ -63,7 +63,7 @@ public:
 
     virtual ~LockFreeDeque() noexcept;
 
-    void Push(const std::shared_ptr<T> &p_one, uint32_t flag = 0) noexcept;
+    void Push(const std::shared_ptr<T> &p_one, EDequeNodeFlag flag = EDequeNodeFlag::NORMAL) noexcept;
 
     std::shared_ptr<T> Pop() noexcept;
 

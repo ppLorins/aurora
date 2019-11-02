@@ -69,18 +69,8 @@ void BinLogOperator::Initialize(const char* role, bool file_name) noexcept {
 
     this->m_precede_lcl_inuse.store(0);
 
-    //this->m_term_changed.store(false);
-
     this->m_initialized = true;
 }
-
-//void BinLogOperator::SetTermMatched() noexcept {
-//    //this->m_term_changed = true;
-//}
-
-//bool BinLogOperator::IsTermMatched() noexcept {
-//    //return this->m_term_changed;
-//}
 
 void BinLogOperator::AddPreLRLUseCount() noexcept {
     this->m_precede_lcl_inuse.fetch_add(1);

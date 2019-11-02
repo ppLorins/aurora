@@ -58,7 +58,9 @@ public:
 
     static bool IsRunning() noexcept;
 
-    static TypePtrCQ<CompletionQueue> GetClientCQInstance() noexcept;
+    static TypePtrCQ<CompletionQueue> GetClientCQInstance(uint32_t idx) noexcept;
+
+    static std::vector<ReactWorkGroup<>>    m_vec_notify_cq_workgroup;
 
 private:
 
@@ -78,15 +80,11 @@ private:
 
     static volatile bool    m_cq_fully_shutdown;
 
-    static std::vector<ReactWorkGroup<>>    m_vec_notify_cq_workgroup;
-
     static std::vector<ReactWorkGroup<>>    m_vec_call_cq_workgroup;
 
     static std::vector<ReactWorkGroup<CompletionQueue>>    m_vec_client_cq_workgroup;
 
     static std::shared_ptr<::raft::RaftService::AsyncService>   m_async_service;
-
-    static std::atomic<int>   m_released_cq_idx;
 
     static std::string      m_server_addr;
 

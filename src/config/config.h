@@ -31,7 +31,6 @@ namespace RaftCore::Config {
     DECLARE_uint32(notify_cq_threads);
     DECLARE_uint32(call_cq_num);
     DECLARE_uint32(call_cq_threads);
-    DECLARE_uint32(client_cq_num);
     DECLARE_uint32(client_thread_num);
     DECLARE_uint32(request_pool_size);
 
@@ -132,21 +131,25 @@ namespace RaftCore::Config {
     DECLARE_bool(clear_existing_sstable_files);
     DECLARE_uint32(hash_slot_num);
     DECLARE_uint32(resync_log_start_idx);
-    DECLARE_uint32(deque_push_count);
+    DECLARE_uint32(deque_op_count);
     DECLARE_uint32(meta_count);
     DECLARE_uint32(follower_svc_benchmark_req_round);
     DECLARE_uint32(leader_svc_benchmark_req_count);
     DECLARE_uint32(benchmark_client_cq_num);
-    DECLARE_uint32(benchmark_client_thread_num_per_cq);
+    DECLARE_uint32(benchmark_client_polling_thread_num_per_cq);
+    DECLARE_uint32(benchmark_client_entrusting_thread_num);
     DECLARE_uint32(client_write_timo_ms);
-    DECLARE_bool(benchmark_client_split_entrusting);
     DECLARE_string(target_ip);
     DECLARE_string(my_ip);
     DECLARE_uint32(storage_get_slice_count);
     DECLARE_uint32(retain_num_unordered_single_list);
     DECLARE_bool(do_commit);
     DECLARE_uint32(value_len);
-
+    DECLARE_uint32(client_count);
+    DECLARE_uint32(launch_threads_num);
+    DECLARE_uint32(queue_initial_size);
+    DECLARE_uint32(queue_op_count);
+    DECLARE_uint32(conn_op_count);
 }
 
 #endif

@@ -128,17 +128,14 @@ int LockFreeQueue<T>::Pop(std::shared_ptr<T> &ptr_element) noexcept {
     SlotState slot_state = SlotState::SLOT_PRODUCED;
     while (!this->m_data[next].m_state.compare_exchange_weak(slot_state, SlotState::SLOT_CONSUMING)) {
 
-        bool _try_again = slot_state == SlotState::SLOT_PRODUCED || //CAS spurious fail.
-            slot_state == SlotState::SLOT_EMPTY ||    //Producer is producing ,try again.
-            slot_state == SlotState::SLOT_PRODUCING;   //Producer is producing ,try again.
+        /*
+        slot_state == SlotState::SLOT_PRODUCED || //CAS spurious fail.
+        slot_state == SlotState::SLOT_EMPTY ||    //Producer is producing ,try again.
+        slot_state == SlotState::SLOT_PRODUCING;   //Producer is producing ,try again.
+        slot_state == SlotState::SLOT_CONSUMING;   //Overlapping consuming occurred.
+        */
 
-        if (_try_again) {
-            slot_state = SlotState::SLOT_PRODUCED;
-            continue;
-        }
-
-        CHECK(false) << "cannot update state from produced to consuming at position:" << next << ",detected state:"
-                    << QueueNode<T>::MacroToString(slot_state) << ",something is terribly wrong" ;
+        slot_state = SlotState::SLOT_PRODUCED;
     }
 
     //Consuming
@@ -182,7 +179,7 @@ int LockFreeQueue<T>::Push(void* ptr_shp_element) noexcept {
         slot_state == SlotState::SLOT_EMPTY || //CAS spurious fail.
         slot_state == SlotState::SLOT_PRODUCED ||  //Consumer is consuming this node,try again.
         slot_state == SlotState::SLOT_CONSUMING || //Consumer is consuming this node,try again.
-        slot_state == SlotState::SLOT_PRODUCING ;   //An overlapping producing occurred.
+        slot_state == SlotState::SLOT_PRODUCING ;  //Overlapping producing occurred.
         */
 
         slot_state = SlotState::SLOT_EMPTY;

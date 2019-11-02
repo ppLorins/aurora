@@ -76,7 +76,7 @@ class TestBase : public ::testing::Test {
         }
 
         void EndTiming(const std::chrono::time_point<std::chrono::steady_clock> &tp_start,const char* operation_name) {
-            ::RaftCore::Tools::EndTiming(tp_start,operation_name);
+            this->m_time_cost_us = ::RaftCore::Tools::EndTiming(tp_start,operation_name);
         }
 
         void LaunchMultipleThread(std::function<void(int thread_idx)> fn,int working_thread=0) {
@@ -100,6 +100,10 @@ class TestBase : public ::testing::Test {
             this->EndTiming(_tp, "total thread");
         }
 
+        uint64_t GetTimeCost() {
+            return this->m_time_cost_us;
+        }
+
     protected:
 
         const int m_cpu_cores = std::thread::hardware_concurrency();
@@ -109,6 +113,8 @@ class TestBase : public ::testing::Test {
         std::string         m_leader_addr = "";
 
         const int           m_follower_port = _RAFT_UNIT_TEST_FOLLWER_PORT_;
+
+        uint64_t    m_time_cost_us = 0;
 };
 
 class TestSingleBackendFollower : public TestBase {

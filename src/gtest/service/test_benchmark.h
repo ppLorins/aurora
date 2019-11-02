@@ -46,6 +46,8 @@ template<typename T,typename R>
 using FPrepareAsync = std::function<std::unique_ptr< ::grpc::ClientAsyncResponseReader<R>>(
     ::grpc::ClientContext*,const T&, CompletionQueue*)>;
 
+typedef std::function<uint32_t(uint32_t)>  FIdxGenertor;
+
 class BenchmarkTime {
 
 public:
@@ -74,73 +76,100 @@ private:
 
 std::atomic<uint64_t>   BenchmarkTime::m_total_latency = 0;
 
-class BenchmarkReact : public BenchmarkTime {
+class BenchmarkReact {
+
 public:
-    virtual void React(bool cq_result) noexcept = 0;
+
+    virtual uint64_t React(bool cq_result) noexcept = 0;
 };
 
 template<typename T,typename R>
-class BenchmarkClient : public BenchmarkReact {
+class BenchmarkClient : public BenchmarkTime {
 
 public:
 
-    BenchmarkClient(std::shared_ptr<Channel> shp_channel, std::shared_ptr<CompletionQueue> shp_cq) {
+    template<typename S>
+    class CallData : public BenchmarkReact {
+
+    public:
+
+        CallData(BenchmarkClient<T, S>* parent) {
+            this->m_client_context.reset(new ::grpc::ClientContext());
+            this->m_parent_client = parent;
+        }
+
+        virtual uint64_t React(bool cq_result) noexcept override {
+
+            if (!cq_result) {
+                LOG(ERROR) << "UnaryBenchmarkClient got false result from CQ.";
+                return 0;
+            }
+
+            uint64_t _latency = this->m_parent_client->Responder(this->m_final_status, this->m_response);
+
+            if (this->m_parent_client->JudgeLast())
+                delete this->m_parent_client;
+
+            return _latency;
+        }
+
+        std::unique_ptr<::grpc::ClientAsyncResponseReader<S>>    m_reader;
+
+        std::shared_ptr<::grpc::ClientContext>    m_client_context;
+
+        ::grpc::Status  m_final_status;
+
+        S   m_response;
+
+        BenchmarkClient<T, S>*   m_parent_client;
+    };
+
+public:
+
+    BenchmarkClient(std::shared_ptr<Channel> shp_channel, std::shared_ptr<CompletionQueue> shp_cq, uint32_t total_entrust) {
         this->m_channel = shp_channel;
         this->m_cq = shp_cq;
         this->m_stub = ::raft::RaftService::NewStub(shp_channel);
-        this->m_client_context.reset(new ::grpc::ClientContext());
+        this->m_resposne_got.store(0);
+        this->m_total_entrusted = total_entrust;
     }
 
     virtual ~BenchmarkClient() {}
 
-    virtual void React(bool cq_result) noexcept override {
-
-        if (!cq_result) {
-            LOG(ERROR) << "UnaryBenchmarkClient got false result from CQ.";
-            this->Release();
-            return;
-        }
-
-        this->Responder(this->m_final_status, this->m_response);
-        this->Release();
-    }
-
     void EntrustRequest(std::function<void(std::shared_ptr<T>&)> req_setter,
-        const FPrepareAsync<T, R> &f_prepare_async, uint32_t timeo_ms, uint64_t idx = 0) noexcept {
+        const FPrepareAsync<T, R> &f_prepare_async, uint32_t timeo_ms) noexcept {
 
         req_setter(this->m_shp_request);
 
         std::chrono::time_point<std::chrono::system_clock> _deadline = std::chrono::system_clock::now() +
             std::chrono::milliseconds(timeo_ms);
 
-        //VLOG(89) << "idx:" << idx << ",start set timeout deadline,plus100";
+        CallData<R>* _p_call_data = new CallData<R>(this);
 
-        this->m_client_context->set_deadline(_deadline);
+        _p_call_data->m_client_context->set_deadline(_deadline);
 
-        //std::time_t _now = std::chrono::system_clock::to_time_t(_deadline);
-        //VLOG(89) << "idx:" << idx << ",time deadline set to:" << std::put_time(std::localtime(&_now),"%H:%M:%S");
-
-        this->m_reader = f_prepare_async(this->m_client_context.get(), *this->m_shp_request, this->m_cq.get());
-        this->m_reader->StartCall();
-        this->m_reader->Finish(&this->m_response, &m_final_status, this);
+        _p_call_data->m_reader = f_prepare_async(_p_call_data->m_client_context.get(), *this->m_shp_request, this->m_cq.get());
+        _p_call_data->m_reader->StartCall();
+        _p_call_data->m_reader->Finish(&_p_call_data->m_response, &_p_call_data->m_final_status, _p_call_data);
     }
 
     std::shared_ptr<::raft::RaftService::Stub> GetStub() noexcept {
         return this->m_stub;
     }
 
-    uint64_t LogLatency(uint64_t start_us, uint64_t idx) const {
+    uint32_t CalculateLatency(uint32_t start_us) {
         auto _now_us = (std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - this->m_start_tp)).count();
-        auto _latency = _now_us - start_us;
-        VLOG(2) << "single req latency(us):" << _latency << ",idx:" << idx;
-        return _latency;
+        return (uint32_t)(_now_us - start_us);
+    }
+
+    bool JudgeLast() noexcept {
+        uint32_t _pre = this->m_resposne_got.fetch_add(1);
+        return _pre + 1 == this->m_total_entrusted;
     }
 
 protected:
 
-    virtual void Release() noexcept = 0;
-
-    virtual void Responder(const ::grpc::Status& status, const R&  rsp) noexcept = 0;
+    virtual uint32_t Responder(const ::grpc::Status& status, const R&  rsp) noexcept = 0;
 
 protected:
 
@@ -148,17 +177,15 @@ protected:
 
     std::shared_ptr<CompletionQueue>     m_cq;
 
-    std::unique_ptr<::grpc::ClientAsyncResponseReader<R>>    m_reader;
-
     std::shared_ptr<T>   m_shp_request;
-
-    R   m_response;
-
-    std::shared_ptr<::grpc::ClientContext>    m_client_context;
 
     std::shared_ptr<::raft::RaftService::Stub>    m_stub;
 
-    ::grpc::Status  m_final_status;
+protected:
+
+    std::atomic<uint32_t>    m_resposne_got;
+
+    uint32_t    m_total_entrusted;
 
 private:
 
@@ -171,12 +198,12 @@ class CommitEntrieBenchmarkClient : public BenchmarkClient<CommitEntryRequest, C
 
 public:
 
-    CommitEntrieBenchmarkClient(std::shared_ptr<::grpc::Channel> shp_channel, std::shared_ptr<::grpc::CompletionQueue> shp_cq) :
-        BenchmarkClient<CommitEntryRequest, CommitEntryResponse>(shp_channel,shp_cq) {}
+    CommitEntrieBenchmarkClient(std::shared_ptr<::grpc::Channel> shp_channel, std::shared_ptr<::grpc::CompletionQueue> shp_cq, uint32_t total) :
+        BenchmarkClient<CommitEntryRequest, CommitEntryResponse>(shp_channel, shp_cq, total) {}
 
     virtual ~CommitEntrieBenchmarkClient() {}
 
-    virtual void Responder(const ::grpc::Status& status,
+    virtual uint32_t Responder(const ::grpc::Status& status,
         const ::raft::CommitEntryResponse&  rsp) noexcept override {
 
         const auto &_idx = this->m_shp_request->entity_id().idx();
@@ -188,12 +215,13 @@ public:
 
         const ::raft::CommonResponse& comm_rsp = rsp.comm_rsp();
         auto _error_code = comm_rsp.result();
-        ASSERT_TRUE(_error_code == ErrorCode::SUCCESS || _error_code == ErrorCode::ALREADY_COMMITTED)
-            << int(_error_code);
-    }
+        CHECK(_error_code == ErrorCode::SUCCESS || _error_code == ErrorCode::ALREADY_COMMITTED) << int(_error_code);
 
-    virtual void Release() noexcept override {
-        delete this;
+        auto _start_us = (uint32_t)std::atoll(comm_rsp.err_msg().c_str());
+        auto _lantency_us = this->CalculateLatency(_start_us);
+        m_total_latency.fetch_add(_lantency_us);
+
+        return _lantency_us;
     }
 };
 
@@ -201,12 +229,12 @@ class AppendEntrieBenchmarkClient : public BenchmarkClient<AppendEntriesRequest,
 
 public:
 
-    AppendEntrieBenchmarkClient(std::shared_ptr<::grpc::Channel> shp_channel, std::shared_ptr<::grpc::CompletionQueue> shp_cq) :
-        BenchmarkClient<AppendEntriesRequest, AppendEntriesResponse>(shp_channel,shp_cq) {}
+    AppendEntrieBenchmarkClient(std::shared_ptr<::grpc::Channel> shp_channel, std::shared_ptr<::grpc::CompletionQueue> shp_cq, uint32_t total) :
+        BenchmarkClient<AppendEntriesRequest, AppendEntriesResponse>(shp_channel, shp_cq, total) {}
 
     virtual ~AppendEntrieBenchmarkClient() {}
 
-    virtual void Responder(const ::grpc::Status& status,
+    virtual uint32_t Responder(const ::grpc::Status& status,
         const AppendEntriesResponse&  rsp) noexcept override {
 
         int _lst_idx = this->m_shp_request->replicate_entity().size() - 1;
@@ -219,15 +247,15 @@ public:
 
         const ::raft::CommonResponse& comm_rsp = rsp.comm_rsp();
         auto _error_code = comm_rsp.result();
-        ASSERT_TRUE(_error_code == ErrorCode::SUCCESS || _error_code == ErrorCode::SUCCESS_MERGED)
+        CHECK(_error_code == ErrorCode::SUCCESS || _error_code == ErrorCode::SUCCESS_MERGED)
             << int(_error_code);
 
-        auto _start_us = std::atoll(comm_rsp.err_msg().c_str());
-        auto _lantency_us = this->LogLatency(_start_us, _lst_log_idx);
+        auto _start_us = (uint32_t)std::atoll(comm_rsp.err_msg().c_str());
+        auto _lantency_us = this->CalculateLatency(_start_us);
         m_total_latency.fetch_add(_lantency_us);
 
         if (!::RaftCore::Config::FLAGS_do_commit)
-            return;
+            return _lantency_us;
 
         //Entrust commit request.
         std::shared_ptr<CommitEntryRequest>   _shp_commit_req(new CommitEntryRequest());
@@ -241,7 +269,7 @@ public:
 
         _p_entity_id->set_idx(_lst_log_idx);
 
-        auto * _p_commit_client = new CommitEntrieBenchmarkClient(this->m_channel, this->m_cq);
+        auto * _p_commit_client = new CommitEntrieBenchmarkClient(this->m_channel, this->m_cq, this->m_total_entrusted);
 
         auto _req_setter = [&](std::shared_ptr<::raft::CommitEntryRequest>& _target)->void {
             _target = _shp_commit_req;
@@ -253,10 +281,8 @@ public:
                                     ::RaftCore::Config::FLAGS_leader_commit_entries_rpc_timeo_ms);
 
         VLOG(89) << "client entrust commit of idx:" << _lst_log_idx;
-    }
 
-    virtual void Release() noexcept override {
-        delete this;
+        return _lantency_us;
     }
 };
 
@@ -265,39 +291,32 @@ class WriteBenchmarkClient : public BenchmarkClient<ClientWriteRequest, ClientWr
 public:
 
     WriteBenchmarkClient(std::shared_ptr<::grpc::Channel> shp_channel,
-        std::shared_ptr<::grpc::CompletionQueue> shp_cq, int idx) :
-        BenchmarkClient<ClientWriteRequest, ClientWriteResponse>(shp_channel, shp_cq), m_idx(idx) {}
+        std::shared_ptr<::grpc::CompletionQueue> shp_cq, uint32_t total) :
+        BenchmarkClient<ClientWriteRequest, ClientWriteResponse>(shp_channel, shp_cq, total) {}
 
     virtual ~WriteBenchmarkClient() {}
 
-    virtual void Responder(const ::grpc::Status& status,
+    virtual uint32_t Responder(const ::grpc::Status& status,
         const ClientWriteResponse&  rsp) noexcept override {
-
-        VLOG(89) << "fetch,idx:" << this->m_idx;
 
         if (!status.ok()) {
             LOG(ERROR) << "error_code:" << status.error_code() << ",err msg"
-                << status.error_message() << ", idx:" << m_idx;
-            return;
+                << status.error_message();
+            return 0;
         }
 
         const ::raft::ClientCommonResponse& _client_comm_rsp = rsp.client_comm_rsp();
         auto _error_code = _client_comm_rsp.result();
-        ASSERT_TRUE(_error_code == ErrorCode::SUCCESS) << "err code:" << int(_error_code)
-            << ",err msg:" << _client_comm_rsp.err_msg() << ",idx:" << this->m_idx;
+        CHECK(_error_code == ErrorCode::SUCCESS) << "err code:" << int(_error_code)
+            << ",err msg:" << _client_comm_rsp.err_msg();
 
-        auto _start_us = std::atoll(_client_comm_rsp.err_msg().c_str());
-        auto _lantency_us = this->LogLatency(_start_us, this->m_idx);
+        auto _start_us = (uint32_t)std::atoll(_client_comm_rsp.err_msg().c_str());
+        auto _lantency_us = this->CalculateLatency(_start_us);
         m_total_latency.fetch_add(_lantency_us);
+
+        return _lantency_us;
     }
 
-    virtual void Release() noexcept override {
-        delete this;
-    }
-
-private:
-
-    uint64_t m_idx;
 };
 
 class BenchmarkBase : public BenchmarkTime {
@@ -316,17 +335,21 @@ public:
         if (_target_ip != "default_none")
             this->m_target_addr = _target_ip;
 
-        this->m_thread_num_per_cq = ::RaftCore::Config::FLAGS_benchmark_client_thread_num_per_cq;
+        this->m_polling_thread_num_per_cq = ::RaftCore::Config::FLAGS_benchmark_client_polling_thread_num_per_cq;
         this->m_cq_num = ::RaftCore::Config::FLAGS_benchmark_client_cq_num;
 
-        this->m_req_num_per_thread = ::RaftCore::Config::FLAGS_follower_svc_benchmark_req_round;
+        this->m_req_num_per_entrusing_thread = ::RaftCore::Config::FLAGS_follower_svc_benchmark_req_round;
         if (::RaftCore::Config::FLAGS_do_commit)
-            this->m_req_num_per_thread *= 2;;
+            this->m_req_num_per_entrusing_thread *= 2;;
 
         if (this->m_leader_svc)
-            this->m_req_num_per_thread = ::RaftCore::Config::FLAGS_leader_svc_benchmark_req_count;
+            this->m_req_num_per_entrusing_thread = ::RaftCore::Config::FLAGS_leader_svc_benchmark_req_count;
 
-        this->m_total_req_num = this->m_req_num_per_thread * this->m_thread_num_per_cq * this->m_cq_num;
+        this->m_total_req_num = this->m_req_num_per_entrusing_thread * this->m_cq_num;
+
+        CHECK(this->m_total_req_num % this->m_polling_thread_num_per_cq == 0);
+
+        this->m_req_num_per_polling_thread = this->m_total_req_num / this->m_polling_thread_num_per_cq;
     }
 
     virtual ~BenchmarkBase() {
@@ -334,8 +357,9 @@ public:
             _cq->Shutdown();
     }
 
-    virtual void EntrustClient2CQ(std::shared_ptr<Channel> shp_channel,
-        std::shared_ptr<CompletionQueue> shp_cq, int idx)noexcept = 0;
+    virtual void EntrustBatch(std::shared_ptr<Channel> &shp_channel,
+        std::shared_ptr<CompletionQueue> &shp_cq, uint32_t total,
+        const FIdxGenertor &generator)noexcept = 0;
 
     void DoBenchmark(bool pure_client = true)noexcept {
 
@@ -360,23 +384,24 @@ public:
 
             auto _start = std::chrono::steady_clock::now();
 
-            uint32_t  _cur_got_num = 0;
+            uint32_t _cur_got_num = 0;
+            uint64_t _total_latency = 0;
 
             auto _shp_cq = this->m_vec_cq[cq_idx];
 
             while (true) {
 
-                if (_cur_got_num >= this->m_req_num_per_thread)
+                if (_cur_got_num >= this->m_req_num_per_polling_thread)
                     break;
 
                 _shp_cq->Next(&tag, &ok);
 
                 BenchmarkReact* _p_ins = static_cast<BenchmarkReact*>(tag);
-                _p_ins->React(ok);
+                _total_latency += _p_ins->React(ok);
 
                 _cur_got_num++;
 
-                continue;
+                delete _p_ins;
             }
 
             auto _end = std::chrono::steady_clock::now();
@@ -386,13 +411,15 @@ public:
 
             uint32_t _throughput = (uint32_t)(_cur_got_num / float(_ms.count()) * 1000);
 
-            std::cout << "thread " << std::this_thread::get_id() << " inner throughput : " << _throughput << std::endl;
+            std::cout << "thread " << std::this_thread::get_id() << " inner throughput : "
+                << _throughput << ",latency(us):" << _total_latency / float(_cur_got_num)
+                << ", current thread total num:" << _cur_got_num << std::endl;
         };
 
         //start the polling thread on CQ first.
         std::vector<std::thread*>   _polling_threads;
         for (std::size_t i = 0; i < this->m_cq_num; ++i) {
-            for (std::size_t j = 0; j < this->m_thread_num_per_cq; ++j) {
+            for (std::size_t j = 0; j < this->m_polling_thread_num_per_cq; ++j) {
                 std::thread *_pthread = new std::thread(_thread_func, i);
                 _polling_threads.push_back(_pthread);
                 VLOG(89) << "clientCQ thread : " << _pthread->get_id() << " for CQ:" << i << " started.";
@@ -406,16 +433,16 @@ public:
 
             int _channel_num = _vec_channel.size();
 
-            int _total_thread_num = this->m_thread_num_per_cq * this->m_cq_num;
-            int _total_thread_idx = this->m_thread_num_per_cq * cq_idx + thread_idx;
+            int _total_thread_num = this->m_polling_thread_num_per_cq * this->m_cq_num;
+            int _total_thread_idx = this->m_polling_thread_num_per_cq * cq_idx + thread_idx;
 
             auto &_shp_channel = _vec_channel[_total_thread_idx % _channel_num];
 
-            for (std::size_t i = 0; i < this->m_req_num_per_thread; ++i) {
-                int req_idx = i * _total_thread_num + _total_thread_idx;
-                this->EntrustClient2CQ(_shp_channel, this->m_vec_cq[cq_idx], req_idx);
-                VLOG(89) << "entrusted idx:" << req_idx;
-            }
+            auto _gen_idx = [&](uint32_t n) -> uint32_t{
+                return n * _total_thread_num + _total_thread_idx;
+            };
+
+            this->EntrustBatch(_shp_channel, this->m_vec_cq[cq_idx], this->m_req_num_per_entrusing_thread, _gen_idx);
         };
 
         auto _start = std::chrono::steady_clock::now();
@@ -423,7 +450,7 @@ public:
         std::vector<std::thread*>   _entrusting_threads;
 
         for (std::size_t n = 0; n < this->m_cq_num; ++n) {
-            for (std::size_t j = 0; j < this->m_thread_num_per_cq; ++j) {
+            for (std::size_t j = 0; j < ::RaftCore::Config::FLAGS_benchmark_client_entrusting_thread_num; ++j) {
                 auto* _p_thread = new std::thread(_entrust_reqs, n, j);
                 _entrusting_threads.push_back(_p_thread);
             }
@@ -461,11 +488,13 @@ private:
 
     std::string  m_target_addr = "";
 
-    uint32_t    m_req_num_per_thread = 0;
+    uint32_t    m_req_num_per_entrusing_thread = 0;
+
+    uint32_t    m_req_num_per_polling_thread = 0;
 
     uint32_t    m_cq_num = 0;
 
-    uint32_t    m_thread_num_per_cq = 0;
+    uint32_t    m_polling_thread_num_per_cq = 0;
 
     uint32_t    m_total_req_num = 0;
 

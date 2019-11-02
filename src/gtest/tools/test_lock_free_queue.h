@@ -44,7 +44,10 @@ class TestLockFreeQueue : public DataStructureBase<LockFreeQueue,int> {
                 //std::cout << *ptr_element << " ";
                 return true;
             };
-            this->m_ds.Initilize(this->m_fn_cb,2 * 1024);
+
+            this->m_initial_size = ::RaftCore::Config::FLAGS_queue_initial_size;
+
+            this->m_ds.Initilize(this->m_fn_cb, this->m_initial_size);
         }
 
         virtual void TearDown() override {
@@ -56,6 +59,8 @@ class TestLockFreeQueue : public DataStructureBase<LockFreeQueue,int> {
         }
 
         std::function<bool(std::shared_ptr<int> ptr_element)> m_fn_cb;
+
+        uint32_t    m_initial_size = 0;
 
 };
 
@@ -95,8 +100,6 @@ TEST_F(TestLockFreeQueue, GeneralOperation) {
 TEST_F(TestLockFreeQueue, ConcurrentPush) {
 
     auto _insert = [&](int idx) {
-        auto _tp = this->StartTimeing();
-
         int i = 0;
         bool _process_result = true;
         while (_process_result) {
@@ -104,15 +107,14 @@ TEST_F(TestLockFreeQueue, ConcurrentPush) {
             int _rst_val = this->m_ds.Push(&_shp);
             _process_result = _rst_val==QUEUE_SUCC;
             if (!_process_result)
-                std::cout << "Push fail ,result:" << _rst_val << std::endl;
+                ASSERT_TRUE(_rst_val == QUEUE_FULL) << "unexpected result:" << _rst_val;
         }
-
-        this->EndTiming(_tp, "one thread inserting");
     };
 
-    this->LaunchMultipleThread(_insert);
+    this->LaunchMultipleThread(_insert, ::RaftCore::Config::FLAGS_launch_threads_num);
 
-    std::cout << this->m_ds.GetSize() << "|" << this->m_ds.GetCapacity() - 1;
+    uint64_t _time_cost_us = this->GetTimeCost();
+    std::cout << "(M)operations per second:" << this->m_initial_size / float(_time_cost_us) << std::endl;
 
     ASSERT_EQ(this->m_ds.GetSize(), this->m_ds.GetCapacity()-1);
 }
@@ -126,76 +128,61 @@ TEST_F(TestLockFreeQueue, ConcurrentPopConsume) {
         int _rst_val = this->m_ds.Push(&_shp);
         _process_result = _rst_val==QUEUE_SUCC;
         if (!_process_result)
-            std::cout << "Push fail ,result:" << _rst_val << std::endl;
+            ASSERT_TRUE(_rst_val == QUEUE_FULL) << "unexpected result:" << _rst_val;
     }
 
     ASSERT_EQ(this->m_ds.GetSize(), this->m_ds.GetCapacity() -1);
 
-
     auto _pop = [&](int idx) {
-        auto _tp = this->StartTimeing();
-
         bool _pop_rst = true;
         while (_pop_rst) {
             int _rst_val = this->m_ds.PopConsume();
             _pop_rst = _rst_val==QUEUE_SUCC;
             if (!_pop_rst)
-                std::cout << "PopConsume fail ,result:" << _rst_val << std::endl;
+                ASSERT_TRUE(_rst_val == QUEUE_EMPTY) << "unexpected result:" << _rst_val;
         }
-
-        this->EndTiming(_tp, "one thread inserting");
     };
 
-    this->LaunchMultipleThread(_pop);
+    this->LaunchMultipleThread(_pop, ::RaftCore::Config::FLAGS_launch_threads_num);
+
+    uint64_t _time_cost_us = this->GetTimeCost();
+    std::cout << "(M)operations per second:" << this->m_initial_size / float(_time_cost_us) << std::endl;
+
     ASSERT_EQ(this->m_ds.GetSize(), 0);
 }
 
 TEST_F(TestLockFreeQueue, ConcurrentPushPopConsume) {
 
+    std::shared_ptr<int> _shp(new int(7));
+
+    for (int i = 0; i < 1000; ++i)
+        this->m_ds.Push(&_shp);
+
+    uint32_t _threads = ::RaftCore::Config::FLAGS_launch_threads_num;
+    uint32_t _op_count = ::RaftCore::Config::FLAGS_queue_op_count;
+
     auto _push_pop = [&](int idx) {
-        auto _tp = this->StartTimeing();
 
-        int i = 0;
-        bool _process_result = true;
-        int _counter = 0;
-        while (_process_result) {
-            bool _only_push = false;
+        for (std::size_t n = 0; n < _op_count; ++n) {
+            bool _process_result = true;
 
-            _counter++;
-            if (_counter > 10) {
-                _counter = 0;
-                _only_push = true;
-            }
-
-            std::shared_ptr<int> _shp(new int(i++));
+            std::shared_ptr<int> _shp(new int(n));
 
             int _rst_val = this->m_ds.Push(&_shp);
-            _process_result = _rst_val==QUEUE_SUCC;
-            if (!_process_result) {
-                std::cout << "Push fail ,result:" << _rst_val << std::endl;
-                continue;
-            }
-
-            if (_only_push)
-                continue;
+            ASSERT_TRUE(_rst_val == QUEUE_SUCC);
 
             _rst_val = this->m_ds.PopConsume();
-            _process_result = _rst_val==QUEUE_SUCC;
-            if (!_process_result) {
-                std::cout << "PopConsume fail ,result:" << _rst_val << std::endl;
-                continue;
-            }
-
-            //std::cout << "------current size:" << this->m_ds.GetSize() << std::endl;
+            ASSERT_TRUE(_rst_val == QUEUE_SUCC);
         }
 
-        this->EndTiming(_tp, "one thread inserting");
     };
 
-    this->LaunchMultipleThread(_push_pop);
+    this->LaunchMultipleThread(_push_pop, _threads);
 
-    ASSERT_EQ(this->m_ds.GetSize(), this->m_ds.GetCapacity()-1);
+    uint32_t _total = _op_count * 2 * _threads;
 
+    uint64_t _time_cost_us = this->GetTimeCost();
+    std::cout << "(M)operations per second:" << _total / float(_time_cost_us) << std::endl;
 }
 
 TEST_F(TestLockFreeQueue, Cmp1) {

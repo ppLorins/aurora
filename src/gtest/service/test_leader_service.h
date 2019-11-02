@@ -43,31 +43,35 @@ public:
         free(this->m_val_buf);
     }
 
-    virtual void EntrustClient2CQ(std::shared_ptr<Channel> shp_channel,
-        std::shared_ptr<CompletionQueue> shp_cq, int idx)noexcept override {
+    virtual void EntrustBatch(std::shared_ptr<Channel> &shp_channel,
+        std::shared_ptr<CompletionQueue> &shp_cq, uint32_t total,
+        const FIdxGenertor &generator)noexcept override {
 
-        auto *_p_append_client = new WriteBenchmarkClient(shp_channel, shp_cq, idx);
+        WriteBenchmarkClient *_p_client = new WriteBenchmarkClient(shp_channel, shp_cq, total);
 
-        auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - this->m_start_tp);
+        for (std::size_t n = 0; n < total; ++n) {
 
-        std::shared_ptr<ClientWriteRequest> _shp_req(new ClientWriteRequest());
-        auto * _req = _shp_req->mutable_req();
-        _req->set_key("leader_benchmark_key_" + std::to_string(idx));
+            auto us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now() - this->m_start_tp);
 
-        char * _p_val = (char*)malloc(::RaftCore::Config::FLAGS_value_len);
+            std::shared_ptr<ClientWriteRequest> _shp_req(new ClientWriteRequest());
 
-        std::string _val = std::string(_WRITE_VAL_TS_) + std::to_string(us.count()) + std::string(this->m_val_buf);
+            auto * _req = _shp_req->mutable_req();
 
-        _req->set_value(_val);
+            uint32_t _req_idx = generator(n);
+            _req->set_key("leader_benchmark_key_" + std::to_string(_req_idx));
 
-        auto _req_setter = [&_shp_req](std::shared_ptr<ClientWriteRequest>& _target)->void {
-            _target = _shp_req;
-        };
-        auto _f_prepare =  std::bind(&::raft::RaftService::Stub::PrepareAsyncWrite,
-                                    _p_append_client->GetStub().get(), std::placeholders::_1,
-                                    std::placeholders::_2, std::placeholders::_3);
-        _p_append_client->EntrustRequest(_req_setter, _f_prepare,
-            ::RaftCore::Config::FLAGS_client_write_timo_ms, idx);
+            _req->set_value(std::string(this->m_val_buf));
+            _shp_req->set_timestamp(us.count());
+
+            auto _req_setter = [&_shp_req](std::shared_ptr<ClientWriteRequest>& _target)->void {
+                _target = _shp_req;
+            };
+            auto _f_prepare = std::bind(&::raft::RaftService::Stub::PrepareAsyncWrite,
+                _p_client->GetStub().get(), std::placeholders::_1,
+                std::placeholders::_2, std::placeholders::_3);
+
+            _p_client->EntrustRequest(_req_setter, _f_prepare, ::RaftCore::Config::FLAGS_client_write_timo_ms);
+        }
     }
 
 private:

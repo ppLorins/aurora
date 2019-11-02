@@ -216,7 +216,7 @@ private:
 #ifdef _SVC_WRITE_TEST_
     std::tm    m_start_tm = { 0, 0, 0, 26, 9 - 1, 2019 - 1900 };
 
-    std::chrono::time_point<std::chrono::system_clock>  m_start_tp;
+    std::chrono::time_point<std::chrono::system_clock>  m_epoch;
 #endif
 
 private:
@@ -314,12 +314,6 @@ private:
     enum class AppendEntriesProcessStage { CREATE, WAITING, FINISH };
 
     AppendEntriesProcessStage     m_append_entries_stage{ AppendEntriesProcessStage::CREATE };
-
-#ifdef _SVC_APPEND_ENTRIES_TEST_
-    std::tm    m_start_tm = { 0, 0, 0, 26, 9 - 1, 2019 - 1900 };
-
-    std::chrono::time_point<std::chrono::system_clock>  m_start_tp;
-#endif
 
 private:
 

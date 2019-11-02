@@ -104,10 +104,6 @@ public:
 
     void GetOrderedMeta(FileMetaData::TypeOffsetList &_output) noexcept;
 
-    //bool IsTermMatched() noexcept;
-
-    //void SetTermMatched() noexcept;
-
     void AddPreLRLUseCount() noexcept;
 
     void SubPreLRLUseCount() noexcept;
@@ -134,8 +130,6 @@ private:
     LogIdentifier                m_zero_log_id;
 
     bool                         m_initialized = false;
-
-    //std::atomic<bool>            m_term_changed = false;
 
     std::atomic<LogIdentifier>   m_last_logged;
 

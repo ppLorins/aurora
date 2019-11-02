@@ -70,5 +70,11 @@ void ReactWorkGroup<T>::ShutDownCQ() noexcept {
     this->m_shp_cq->Shutdown();
 }
 
+template<typename T>
+void ReactWorkGroup<T>::GetThreadId(std::vector<std::thread::id> &ids) noexcept {
+    for (auto& _thread : this->m_vec_threads)
+        ids.emplace_back(_thread->get_id());
+}
+
 }
 

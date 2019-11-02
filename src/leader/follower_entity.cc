@@ -17,6 +17,7 @@
 */
 
 #include "common/comm_view.h"
+#include "leader/leader_view.h"
 #include "global/global_env.h"
 #include "storage/storage.h"
 #include "leader/follower_entity.h"
@@ -24,26 +25,36 @@
 namespace RaftCore::Leader {
 
 using ::RaftCore::Common::CommonView;
+using ::RaftCore::Leader::LeaderView;
 using ::RaftCore::Global::GlobalEnv;
 using ::RaftCore::Storage::StorageMgr;
 using ::RaftCore::Service::OwnershipDelegator;
 
 const char* FollowerEntity::m_status_macro_names[] = { "NORMAL","RESYNC_LOG","RESYNC_DATA"};
 
-FollowerEntity::FollowerEntity(const std::string &follower_addr,FollowerStatus status,
-    uint32_t joint_consensus_flag) noexcept{
+FollowerEntity::FollowerEntity(const std::string &follower_addr, FollowerStatus status,
+    uint32_t joint_consensus_flag, std::shared_ptr<CompletionQueue> input_cq) noexcept {
 
     this->m_shp_channel_pool.reset(new ChannelPool(follower_addr,::RaftCore::Config::FLAGS_channel_pool_size));
-
     auto _channel = this->m_shp_channel_pool->GetOneChannel();
 
-    uint32_t _pool_size = ::RaftCore::Config::FLAGS_client_pool_size;
+    uint32_t _notify_threads_num = ::RaftCore::Config::FLAGS_notify_cq_threads * ::RaftCore::Config::FLAGS_notify_cq_num;
+    for (std::size_t n = 0; n < _notify_threads_num; ++n) {
+        this->m_append_client_pool[n].reset(new ClientPool<AppendEntriesAsyncClient>(this));
+        this->m_commit_client_pool[n].reset(new ClientPool<CommitEntriesAsyncClient>(this));
+    }
 
-    this->m_append_client_pool.reset(new ClientPool<AppendEntriesAsyncClient>(this));
+    uint32_t _pool_size = ::RaftCore::Config::FLAGS_client_pool_size;
     for (std::size_t i = 0; i < _pool_size; ++i) {
-        auto* _p_client = new AppendEntriesAsyncClient(_channel, GlobalEnv::GetClientCQInstance());
+        uint32_t _idx = i % _notify_threads_num;
+        auto shp_cq = input_cq;
+        if (!shp_cq)
+            shp_cq = GlobalEnv::GetClientCQInstance(_idx);
+
+        auto* _p_client = new AppendEntriesAsyncClient(_channel, shp_cq);
         auto _shp_client = _p_client->OwnershipDelegator<AppendEntriesAsyncClient>::GetOwnership();
-        this->m_append_client_pool->Back(_shp_client);
+
+        this->m_append_client_pool[_idx]->Back(_shp_client);
     }
 
     uint32_t _group_commit = ::RaftCore::Config::FLAGS_group_commit_count;
@@ -53,11 +64,15 @@ FollowerEntity::FollowerEntity(const std::string &follower_addr,FollowerStatus s
 
     VLOG(89) << "debug commit client size:" << _commit_client_size << ",addr:" << this->my_addr;
 
-    this->m_commit_client_pool.reset(new ClientPool<CommitEntriesAsyncClient>(this));
     for (std::size_t i = 0; i < _commit_client_size; ++i) {
-        auto* _p_client = new CommitEntriesAsyncClient(_channel, GlobalEnv::GetClientCQInstance());
+        uint32_t _idx = i % _notify_threads_num;
+        auto shp_cq = input_cq;
+        if (!shp_cq)
+            shp_cq = GlobalEnv::GetClientCQInstance(_idx);
+
+        auto* _p_client = new CommitEntriesAsyncClient(_channel, shp_cq);
         auto _shp_client = _p_client->OwnershipDelegator<CommitEntriesAsyncClient>::GetOwnership();
-        this->m_commit_client_pool->Back(_shp_client);
+        this->m_commit_client_pool[_idx]->Back(_shp_client);
     }
 
     this->m_joint_consensus_flag = joint_consensus_flag;
@@ -84,6 +99,20 @@ bool FollowerEntity::UpdateLastSentCommitted(const LogIdentifier &to) noexcept {
     }
 
     return true;
+}
+
+std::shared_ptr<AppendEntriesAsyncClient> FollowerEntity::FetchAppendClient(void* &pool) noexcept {
+    auto _tid = std::this_thread::get_id();
+    auto &_uptr_pool = this->m_append_client_pool[LeaderView::m_notify_thread_mapping[_tid]];
+    pool = _uptr_pool.get();
+    return _uptr_pool->Fetch();
+}
+
+std::shared_ptr<CommitEntriesAsyncClient> FollowerEntity::FetchCommitClient(void* &pool) noexcept {
+    auto _tid = std::this_thread::get_id();
+    auto &_uptr_pool = this->m_commit_client_pool[LeaderView::m_notify_thread_mapping[_tid]];
+    pool = _uptr_pool.get();
+    return _uptr_pool->Fetch();
 }
 
 }

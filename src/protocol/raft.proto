@@ -57,6 +57,7 @@ message RequestBase {
 
 message ClientWriteRequest {
   required WriteRequest req   = 1;
+  optional uint32  timestamp = 2;
 }
 
 message WriteRequest {

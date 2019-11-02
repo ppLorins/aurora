@@ -29,6 +29,8 @@
 #include "leader/follower_entity.h"
 
 using ::RaftCore::Leader::FollowerEntity;
+using ::RaftCore::Leader::FollowerStatus;
+using ::RaftCore::Member::JointConsensusMask;
 
 class TestFollowerEntity : public TestSingleBackendFollower {
 
@@ -38,16 +40,18 @@ class TestFollowerEntity : public TestSingleBackendFollower {
 
     protected:
 
-        virtual void SetUp() override { }
+        virtual void SetUp() override {}
 
-        virtual void TearDown() override { }
+        virtual void TearDown() override {}
 
 };
 
 TEST_F(TestFollowerEntity, GeneralOperation) {
 
-    FollowerEntity _obj_entity(this->m_follower_svc_addr);
+    std::shared_ptr<CompletionQueue> _shp_cq(new CompletionQueue());
 
+    FollowerEntity _obj_entity(this->m_follower_svc_addr, FollowerStatus::NORMAL,
+        uint32_t(JointConsensusMask::IN_OLD_CLUSTER), _shp_cq);
 }
 
 

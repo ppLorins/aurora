@@ -23,6 +23,7 @@
 
 #include <memory>
 #include <atomic>
+#include <unordered_map>
 
 #include "common/comm_view.h"
 #include "common/comm_defs.h"
@@ -31,6 +32,7 @@
 
 namespace RaftCore::Leader {
 
+using grpc::CompletionQueue;
 using ::RaftCore::Common::LogIdentifier;
 using ::RaftCore::Member::JointConsensusMask;
 using ::RaftCore::Client::AppendEntriesAsyncClient;
@@ -49,19 +51,30 @@ class FollowerEntity final{
 
 public:
 
+template<typename T>
+using TClientPool = std::unordered_map<uint32_t, std::unique_ptr<T>>;
+
+
     inline static const char* MacroToString(FollowerStatus enum_val) {
         return m_status_macro_names[int(enum_val)];
     }
 
 public:
 
-    FollowerEntity(const std::string &follower_addr,FollowerStatus status=FollowerStatus::NORMAL,
-                    uint32_t joint_consensus_flag=uint32_t(JointConsensusMask::IN_OLD_CLUSTER)) noexcept;
+    FollowerEntity(const std::string &follower_addr, FollowerStatus status = FollowerStatus::NORMAL,
+        uint32_t joint_consensus_flag = uint32_t(JointConsensusMask::IN_OLD_CLUSTER),
+        std::shared_ptr<CompletionQueue> input_cq = nullptr) noexcept;
 
     virtual ~FollowerEntity() noexcept;
 
     //If ever successfully updated the last sent committed for this follower.
     bool UpdateLastSentCommitted(const LogIdentifier &to) noexcept;
+
+    std::shared_ptr<AppendEntriesAsyncClient> FetchAppendClient(void* &pool) noexcept;
+
+    std::shared_ptr<CommitEntriesAsyncClient> FetchCommitClient(void* &pool) noexcept;
+
+public:
 
     std::string     my_addr;
 
@@ -75,14 +88,14 @@ public:
 
     std::shared_ptr<ChannelPool>    m_shp_channel_pool;
 
-    //Note: only high frequency used client need to be pooled.
-    std::unique_ptr<ClientPool<AppendEntriesAsyncClient>>     m_append_client_pool;
-
-    std::unique_ptr<ClientPool<CommitEntriesAsyncClient>>     m_commit_client_pool;
-
     std::atomic<LogIdentifier>      m_last_sent_committed;
 
 private:
+
+    //Note: only high frequently used client need to be pooled.
+    TClientPool<ClientPool<AppendEntriesAsyncClient>>   m_append_client_pool;
+
+    TClientPool<ClientPool<CommitEntriesAsyncClient>>   m_commit_client_pool;
 
     static const char*  m_status_macro_names[];
 

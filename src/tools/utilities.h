@@ -99,7 +99,7 @@ inline uint32_t CalculateCRC32(const void* data, unsigned int len) {
 
 TypeTimePoint StartTimeing();
 
-void EndTiming(const TypeTimePoint &tp_start, const char* operation_name, const LogIdentifier *p_cur_id = nullptr);
+uint64_t EndTiming(const TypeTimePoint &tp_start, const char* operation_name, const LogIdentifier *p_cur_id = nullptr);
 
 void StringSplit(const std::string &input, char delimiter, std::set<std::string> &output);
 

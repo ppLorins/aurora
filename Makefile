@@ -2,7 +2,7 @@
 BUILD_TYPE=debug
 
 CXX = g++
-CXXFLAGS = -std=c++17 -D_RAFT_UNIT_TEST_
+CXXFLAGS = -std=c++17
 
 ifeq ($(BUILD_TYPE),debug)
 CXXFLAGS += -g3
@@ -13,9 +13,14 @@ endif
 CXXFLAGS += -O3
 endif
 
+CXXFLAGS_UTEST = $(CXXFLAGS) -D_RAFT_UNIT_TEST_
+
 SRCDIR = src
 BINDIR = bin
 OBJDIR = $(BINDIR)/$(BUILD_TYPE)/object
+OBJ_EXE_SUB_DIR = $(OBJDIR)/release-version
+OBJ_UTEST_SUB_DIR = $(OBJDIR)/unit-test-version
+
 
 THIRD_PARTY_DIR=./third_party
 
@@ -61,7 +66,7 @@ all: system-check $(MAIN_PROGRAM) $(MAIN_TEST)
 
 .PHONY: prepare
 prepare:
-	mkdir -p $(OBJDIR)
+	mkdir -p $(OBJ_EXE_SUB_DIR) $(OBJ_UTEST_SUB_DIR)
 
 ALL_SRC_FILES=$(wildcard src/*.cc src/*/*.cc)
 TPL_CC_FILES=%src/tools/lock_free_deque.cc %src/tools/lock_free_hash.cc \
@@ -78,28 +83,35 @@ TPL_CC_FILES=%src/tools/lock_free_deque.cc %src/tools/lock_free_hash.cc \
 
 COMPILE_SRC_FILES = $(filter-out $(TPL_CC_FILES), $(ALL_SRC_FILES) )
 
-OBJ = $(patsubst %.cc, $(OBJDIR)/%.o, $(COMPILE_SRC_FILES))
+OBJ_EXE = $(patsubst %.cc, $(OBJ_EXE_SUB_DIR)/%.o, $(COMPILE_SRC_FILES))
+OBJ_UTEST = $(patsubst %.cc, $(OBJ_UTEST_SUB_DIR)/%.o, $(COMPILE_SRC_FILES))
 
 EXE_MAIN_OBJ=%/main.o
-UTEST_MAIN_OBJ=%gtest_main.o
-EXE_OBJ = $(filter-out $(UTEST_MAIN_OBJ), $(OBJ) )
-UTEST_OBJ = $(filter-out $(EXE_MAIN_OBJ), $(OBJ) )
+UTEST_MAIN_OBJ=%/gtest_main.o
+
+EXE_OBJ = $(filter-out $(UTEST_MAIN_OBJ), $(OBJ_EXE) )
+UTEST_OBJ = $(filter-out $(EXE_MAIN_OBJ), $(OBJ_UTEST) )
 
 .PHONY:test
 test:$(PROTO_FLAG)
 	@echo "all:" $(ALL_SRC_FILES)
 	@echo "src:" $(COMPILE_SRC_FILES)
-	@echo "object:" $(OBJ)
+	@echo "object-exe:" $(OBJ_EXE)
+	@echo "object-utest:" $(OBJ_UTEST)
 
-$(OBJDIR)/%.o: %.cc
-	@mkdir -p $(OBJDIR)/$(dir $<)
+$(OBJ_EXE_SUB_DIR)/%.o: %.cc
+	@mkdir -p $(OBJ_EXE_SUB_DIR)/$(dir $<)
 	$(CXX) $(CXXFLAGS) $(INC) -c $< -o $@
+
+$(OBJ_UTEST_SUB_DIR)/%.o: %.cc
+	@mkdir -p $(OBJ_UTEST_SUB_DIR)/$(dir $<)
+	$(CXX) $(CXXFLAGS_UTEST) $(INC) -c $< -o $@
 
 $(MAIN_PROGRAM): $(EXE_OBJ)
 	$(CXX) $(CXXFLAGS) $^ $(LIB) -o $@
 
 $(MAIN_TEST): $(UTEST_OBJ)
-	$(CXX) $(CXXFLAGS) $^ $(LIB) -o $@
+	$(CXX) $(CXXFLAGS_UTEST) $^ $(LIB) -o $@
 
 PROTOC = protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin

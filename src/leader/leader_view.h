@@ -70,6 +70,12 @@ public:
 
     static void UnInitialize() noexcept;
 
+    static void ClientThreadReacting(const ReactInfo &info) noexcept;
+
+    static void BroadcastHeatBeat() noexcept;
+
+    static void UpdateThreadMapping() noexcept;
+
 //Set the following member functions to protected is to facilitate gtest.
 #ifdef _LEADER_VIEW_TEST_
 public:
@@ -82,10 +88,6 @@ private:
     static bool SyncDataCB(std::shared_ptr<BackGroundTask::SyncDataContenxt> &shp_context)noexcept;
 
     static bool ClientReactCB(std::shared_ptr<BackGroundTask::ClientReactContext> &shp_context) noexcept;
-
-    static void ClientThreadReacting(const ReactInfo &info) noexcept;
-
-    static void BroadcastHeatBeat() noexcept;
 
 public:
 
@@ -114,6 +116,9 @@ public:
     static ServerStatus     m_status;
 
     static std::atomic<uint32_t>      m_last_log_waiting_num;
+
+    //Mapping each notify thread to a dedicated cq for it to entrust client requests.
+    static std::unordered_map<std::thread::id,uint32_t>     m_notify_thread_mapping;
 
 private:
 

@@ -72,8 +72,12 @@ OperationTracker<T>::~OperationTracker()noexcept {}
 
 template <typename T>
 void OperationTracker<T>::WaitForListClean(T* output_tail) noexcept {
+    /*Note: This is for waiting for unfinished writing insertions inside the cut off list to be finished.
+        Thus can prevent from losing elements, but still cannot prevent from instantly freeing elements
+        after cutting head, it still needs a delay free process.  */
+
     bool _finished = true;
-    //Waiting for unfinished insertions inside the cut off list to be finished.
+
     auto _checker = [&](const std::shared_ptr<ThreadIDWrapper<void>> &k, const std::shared_ptr<T> &v) ->bool {
         if (!v)
             return true;

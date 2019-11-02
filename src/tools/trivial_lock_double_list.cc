@@ -265,28 +265,6 @@ void TrivialLockDoubleList<T>::DeleteAll() noexcept {
     }
 }
 
-//template <typename T>
-//bool TrivialLockDoubleList<T>::MoveForward(DoubleListNode<T>* &p_pre,DoubleListNode<T>* &p_next) noexcept {
-//
-//    auto _reach_tail = [&]() {
-//        return p_pre == this->m_tail || p_next == this->m_tail;
-//    };
-//
-//    if (_reach_tail())
-//        return false;
-//
-//    do {
-//        /*If reach here , no elements could be inserted between p_pre  and p_next since they
-//          are adjacent. So the following move forward operations are safe .  */
-//        p_pre  = p_next;
-//        p_next = p_next->m_atomic_next.load();
-//        if (_reach_tail())
-//            return false;
-//    } while (p_pre->IsDeleted() && p_next->IsDeleted());
-//
-//    return true;
-//}
-
 template <typename T>
 bool TrivialLockDoubleList<T>::MoveForward(DoubleListNode<T>* &p_pre,DoubleListNode<T>* &p_next) noexcept {
 

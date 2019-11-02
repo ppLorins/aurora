@@ -59,6 +59,8 @@ public:
 
     void ShutDownCQ() noexcept;
 
+    void GetThreadId(std::vector<std::thread::id> &ids) noexcept;
+
 private:
 
     void GrpcPollingThread() noexcept;

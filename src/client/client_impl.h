@@ -49,7 +49,7 @@ class AppendEntriesAsyncClient : public UnaryAsyncClient<::raft::AppendEntriesRe
 public:
 
     AppendEntriesAsyncClient(std::shared_ptr<::grpc::Channel> shp_channel,
-        std::shared_ptr<::grpc::CompletionQueue> shp_cq);
+        std::shared_ptr<::grpc::CompletionQueue> shp_cq, bool delegate_me = true);
 
     virtual ~AppendEntriesAsyncClient();
 

@@ -35,7 +35,6 @@
     * [Data part](#data-part)
     * [Supported operations](#supported-operation)
   * [Storage Layer](#storage-layer)
-    * [GC](#storage-gc)
   * [Election](#election)
     * [The basics](#the-basics)
     * [About prevoting](#about-prevoting)
@@ -501,7 +500,7 @@ Okay, after the iterating thread found some request could be returned, it will i
 
 Now, we've got an detailed view of how does follower work on appending log entries.
 
-#### Leader workflow
+#### Leader workflow<a name="leader-workflow"></a>
 
 Before we stepping further into how does the leader work, we need to first have a glance at the two kind of pools used by leader:
 
@@ -546,8 +545,7 @@ Before explaining the `execution stream` in detail, we'd better know some featur
 
 * `phaseII_ready_list`: a variable which is used for holding followers indicators that need to do the committing jobs later.
 * `permission flag` : a variable acting as a switch which ensure only one thread could take it(by successfully finished a CAS operation) and then step further to do the succeeding jobs. 
-* `group commit` : This is a feature commonly used in many database product, which is intended to reduce the overhead caused by frequently committing requests especially in some two phase committing scenarios, the `Log Replication` here is just one of them.
-So you'll see not every succeed `AppendEntries` response will trigger a corresponding `CommitEntries` later, they will get grouped into one `CommitEntries` request when accumulated for a certain number.
+* `group commit` : This is a configurable feature commonly used in many database products, it intends to reduce the overhead caused by frequently committing requests especially in the two phase committing scenarios, the `Log Replication` here is just one of them. So you'll see not every succeed `AppendEntries` response will trigger a corresponding `CommitEntries` later, they will get grouped into one `CommitEntries` request when accumulated for a certain number. `Group commit` has its own [pros and cons](#group-commit-pros-cons) which we will talk about later.
 
 The `execution stream` contains the following steps:
 * update the `phaseI_statistic`.
@@ -555,7 +553,7 @@ The `execution stream` contains the following steps:
   * `Yes` : trying to get the `permission flag`:
      * Got : Step futher.
      * Lost : do nothing.
-  * `No`: judge if the number of logs which are replicated but not yet committed has reached the limitation of  `group commit`.
+  * `No`: judge if the number of logs which are replicated but not yet committed has reached the limitation of `group commit`.
     * not reached : do nothing.
     * reached : push the current follower entity into the `phaseII_ready_list`.
 
@@ -578,6 +576,14 @@ Finally, I'd like to emphasize an special design for getting rid of [this implic
 ![polling-cq-thread](images/polling-CQ-thread.png)
 
 This is the design for the above purpose, the `Backend-CQ-*` & their corresponding threads(says `threads Y`) are **only** responsible for reacting with client responses, and not the other way around. Further, to keep the work of `threads Y` as simple as possible which also contributes to fetching responses ASAP, `threads Y` will wrap the reacting info by which can find the remaining works into a struct and push that struct into a [priority queue](priorify-queue)(says `PriQueue X`), so at last, it will be the background threads(says `threads Z`) who are polling on the `PriQueue X` will indeed do the subsequent jobs. So threads of `F1-Fn` in the previous picture not the threads directly polling on the CQ, they are actually `threads Z`, a little winding.
+
+<a name="group-commit-pros-cons"></a> Here, let's back to talk about the pros and cons of group commit:
+* pros: significantly reduce traffice between leader and followers.
+* cons: <a name="cons-of-group-commit"></a>
+  * followers can no longer serve consistent reading since its data may stay greatly stale.
+  * it'll be more easier to trigger a resync-data event in some way because `ID-LCL` may be greater than its actual value compared to the leader's counterpart.
+  
+Con1 is okay and under aurora's design, for con2 it can only happen if `ID-LRL` > `ID of the last consisten log entry`, consult to `storage.cc` for details.
 
 ### Asynchronous Framework
 
@@ -804,8 +810,7 @@ Since the storage layer sharing so many concepts and features with leveldb, you 
 * we already have a binlog which records exactly what the `WAL` needs, we must to utilize it getting around of leveldb doing a duplicated job.
 * with a customized memory table, we can take the advantage of lockfree feature for writing.
 
-### GC <a name="storage-gc"></a>
-
+And last, storage layer has its own GC mechanism which is very much like that of the `TrivialLockDoubleList`'s and `TrivialLockSingleList`'s GC except one thing: storage GC do merge sstables, and this is a standard behavior in leveldb.
 
 ### Election
 
@@ -960,15 +965,15 @@ It will cost ~3.5 seconds(win10 debug) to dump a 20K items memory table to a SST
 
 There is only a `memory_table_max_item` config to control when to dump the memory to SSTable, but is hard to decide the number for the users. Thus something like `memory_table_max_memory_mb` is needed to give an option that can be used to control by size of memory it used.
 
-##### 4. Binlog GC.
+##### 4. Binlog GC
 
-Number of binlog files will increasing as data grows, in the current design, only at the startup time for the server can we know which binlog files can be deleted, manually. We need an elegant way to delete the big files as promptly as possible to free dick space.
+The number of binlog files will increase as data grows, in the current design, only at the startup time for the server can we know which binlog files can be deleted, manually. We need an elegant way to delete the big files as promptly as possible to free dick space.
 
-##### 5. Bi-directional streaming rpc.
+##### 5. Bi-directional streaming rpc
 
 The communications between leader & followers are now in a way of unary rpc. Throughput is kinda lower compared to the way of bi-directional streaming rpc. It's worth improving it in that way, and this can alos mitigate [this problem](https://github.com/grpc/grpc/issues/19658).
 
-##### 6. MPMC performance issues.
+##### 6. MPMC performance issues
 
 There are two types of MPMC here:
 * lockfree deque.
@@ -989,6 +994,12 @@ Things need to figure out:
 * why linux performs much worse than windows when there more than one thread.
 
 Consult to [benchmark](../doc/benchmark.md) to see the windows & linux mathine configurations.
+
+##### 7. parallel writing binlog with replicating
+
+In the current [leader workflow](#leader-workflow), the process of appending binlog can only happen after the corresponding log entry has been successfully replicated to the majority of the cluster. But in fact, the leader doesn't have to guarantee the order. The written logs which are not majority confirmed still make sense after a leader(or be elected out) restart, because it's the leader, all its logs will be treated as committed eventually(by sending an empty-op log in the elected case), regardless of whether they have been majority confirmed or not.
+
+Thus we can push the appending log jobs to background, decoupling it from replicating, improving the performance further.
 
 #### New features
 

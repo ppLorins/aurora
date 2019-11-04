@@ -189,7 +189,11 @@ bool StorageMgr::ConstructFromBinlog(const LogIdentifier &from, const std::strin
         _cur_id.Set(_entity_id.term(), _entity_id.idx());
 
         /*Note: m_last_committed may greater than the real LCL of the current server, it's okay  b/c:
-          1> if current server is the leader, any log entries in the binlog should have been committed, as the way aurora works.
+          1> if current server is the leader, any log entries in the binlog must have been committed, as the way aurora works.
+             Update@2019-11-05: it's still okay for the leader when an optimization of parallel wiring binlog and replicating
+             is carried out since b/c it is(or be elected as) the leader, all its logs will be treated as committed eventually,
+             regardless of whether they have been majority confirmed or not.
+
           2> if current server is a follower, and the 'm_last_committed' > the last consistent
             log entry, a SYNC_DATA would eventually triggered.
           3> if current server is a candidate, no influence on that.

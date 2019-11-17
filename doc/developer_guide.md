@@ -264,18 +264,14 @@ Okay, here comes the last one issue we should consider about: there may have unf
 
  ![cuthead 2-5](images/list-cuthead-2-5.png)
  
- If we start using(iterating) the cut off list immediately, we may lost `Node 4.5` and `Node 5.5` which are not yet finished inserting, this is certainly unacceptable. The simplest work around is to just sleeping for a little while(~1-9us) that is relatively long enough for the threads to get their job done. But we can't define a proper value for it, leaving this kind of solution as inelegant. How does aurora cope with it is a little bit complicated: 
+ If we start using(iterating) the cut off list immediately, we may lost `Node 4.5` and `Node 5.5` which are not yet finished inserting, this is certainly unacceptable. The simplest work around is to just sleeping for a little while(supposes ~1-9us) that is relatively long enough for the threads to get their job done. But we can't define a proper value for it, leaving this kind of solution as inelegant. How does aurora cope with it is a little bit complicated: 
  
- * the list maintain a Hash with the inserting thread's id as the key, and a flag as value, the flag is for indicating whether the threads is inserting something or not at the moment.
- * every inserting thread will set the flag before start inserting and erase it after finished inserting.
- * before `CutHead` returned, the thread will waiting for the flags to be all cleared in a spin manner(with `std::yield` enabled to reduce cpu wasting).
+ * the list maintain a Hash with the inserting thread's id as the hash key, and a pointer as the hash value which is indicating the value being inserted at the moment.
+ * every inserting thread will set the hash value before start inserting and erase it(set to `nullptr`) after finished inserting.
+ * before `CutHead` returns, the thread would has to wait(in a spin manner) for all the inserting values currently represented in the hash are all *greater*(or *smaller* depends on the rule user specified), than the last element of the cut off list.
  
- This can ensure that only after all the inserting threads are done with their jobs, can the `CutHead` function return. But this solution still not being good enough: there can be threads(says `threads X`) inserting in the original list(not the cut off list) at the moment while `CutHead` thread is on its waiting, `threads X` could prevent `CutHead` from returning forever:
- 
- ![cuthead 2-6](images/list-cuthead-2-6.png)
- 
- So we have to distinguish the threads which are truly relevant to the cut off list from `threads X`. But how can we achieve this? Well, note that the inserting value of each inserting threads is the best factor to do this: we can judge whether a thread is relevant by compare the value with the last element in the cut off list. For now the Hash's value isn't a flag anymore, it has become the value being inserted. However, since the value is a template one, recording(copying) it may has variable overhead, so aurora make a compromise : recording a snapshot(pointer of the node immediately after `Head Node`) of the list when threads start inserting rather than the value being inserted, this solution will still prevent most of the `threads X` from disturbing the cutting head operation, which is good enough for us even though it may has `false positive`(uncorrectly judging some unrelevant threads as relevant) effect on some cases.
- 
+ This can ensure that only after all the inserting threads are done with their jobs, can the `CutHead` function return.
+
  *Note:the hash used here is also lockfree, which will introduced soon later.*
  
 ###### 3.4 Recap
